@@ -1,0 +1,135 @@
+# ros_gz_bridge parameter_bridge configuration.
+# Each entry maps a gz transport topic to a ROS 2 topic and declares the direction.
+# gz.msgs.* are Gazebo message types; the *_msgs/msg/* are their ROS 2 equivalents.
+
+# Command velocity: ROS -> Gazebo (teleop / Nav2 controller drives the robot)
+- ros_topic_name: "cmd_vel"
+  gz_topic_name: "cmd_vel"
+  ros_type_name: "geometry_msgs/msg/Twist"
+  gz_type_name: "gz.msgs.Twist"
+  direction: ROS_TO_GZ
+
+# Wheel odometry: Gazebo -> ROS
+- ros_topic_name: "odom"
+  gz_topic_name: "odom"
+  ros_type_name: "nav_msgs/msg/Odometry"
+  gz_type_name: "gz.msgs.Odometry"
+  direction: GZ_TO_ROS
+
+# odom -> base_footprint transform published by DiffDrive: Gazebo -> ROS
+- ros_topic_name: "tf"
+  gz_topic_name: "tf"
+  ros_type_name: "tf2_msgs/msg/TFMessage"
+  gz_type_name: "gz.msgs.Pose_V"
+  direction: GZ_TO_ROS
+
+# Wheel joint angles (so robot_state_publisher can rotate the wheels): Gazebo -> ROS
+- ros_topic_name: "joint_states"
+  gz_topic_name: "joint_states"
+  ros_type_name: "sensor_msgs/msg/JointState"
+  gz_type_name: "gz.msgs.Model"
+  direction: GZ_TO_ROS
+
+# Lidar scan: Gazebo -> ROS
+- ros_topic_name: "scan"
+  gz_topic_name: "scan"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "gz.msgs.LaserScan"
+  direction: GZ_TO_ROS
+
+# Simulation clock (drives use_sim_time everywhere): Gazebo -> ROS
+- ros_topic_name: "clock"
+  gz_topic_name: "clock"
+  ros_type_name: "rosgraph_msgs/msg/Clock"
+  gz_type_name: "gz.msgs.Clock"
+  direction: GZ_TO_ROS
+
+# --- Gripper (DetachableJoint on the robot's gripper_link) ---
+# Publishing an Empty on attach/detach grabs/releases the item.
+- ros_topic_name: "/gripper/item_1/attach"
+  gz_topic_name: "/gripper/item_1/attach"
+  ros_type_name: "std_msgs/msg/Empty"
+  gz_type_name: "gz.msgs.Empty"
+  direction: ROS_TO_GZ
+
+- ros_topic_name: "/gripper/item_1/detach"
+  gz_topic_name: "/gripper/item_1/detach"
+  ros_type_name: "std_msgs/msg/Empty"
+  gz_type_name: "gz.msgs.Empty"
+  direction: ROS_TO_GZ
+
+# World poses of the robot and the item, each on its own named topic (published by the
+# PosePublisher plugins). The gripper node compares them to VERIFY a grab actually took
+# hold rather than trusting the command blindly -- this is what makes the M6 retry state
+# machine meaningful.
+- ros_topic_name: "/model/robofetch/pose"
+  gz_topic_name: "/model/robofetch/pose"
+  ros_type_name: "geometry_msgs/msg/Pose"
+  gz_type_name: "gz.msgs.Pose"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/model/item_1/pose"
+  gz_topic_name: "/model/item_1/pose"
+  ros_type_name: "geometry_msgs/msg/Pose"
+  gz_type_name: "gz.msgs.Pose"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/gripper/item_2/attach"
+  gz_topic_name: "/gripper/item_2/attach"
+  ros_type_name: "std_msgs/msg/Empty"
+  gz_type_name: "gz.msgs.Empty"
+  direction: ROS_TO_GZ
+
+- ros_topic_name: "/gripper/item_2/detach"
+  gz_topic_name: "/gripper/item_2/detach"
+  ros_type_name: "std_msgs/msg/Empty"
+  gz_type_name: "gz.msgs.Empty"
+  direction: ROS_TO_GZ
+
+- ros_topic_name: "/model/item_2/pose"
+  gz_topic_name: "/model/item_2/pose"
+  ros_type_name: "geometry_msgs/msg/Pose"
+  gz_type_name: "gz.msgs.Pose"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/gripper/item_3/attach"
+  gz_topic_name: "/gripper/item_3/attach"
+  ros_type_name: "std_msgs/msg/Empty"
+  gz_type_name: "gz.msgs.Empty"
+  direction: ROS_TO_GZ
+
+- ros_topic_name: "/gripper/item_3/detach"
+  gz_topic_name: "/gripper/item_3/detach"
+  ros_type_name: "std_msgs/msg/Empty"
+  gz_type_name: "gz.msgs.Empty"
+  direction: ROS_TO_GZ
+
+- ros_topic_name: "/model/item_3/pose"
+  gz_topic_name: "/model/item_3/pose"
+  ros_type_name: "geometry_msgs/msg/Pose"
+  gz_type_name: "gz.msgs.Pose"
+  direction: GZ_TO_ROS
+
+# DetachableJoint reports its real attach state here - the authoritative answer to
+# "is the parcel actually held?", far better than guessing from proximity.
+- ros_topic_name: "/gripper/item_1/state"
+  gz_topic_name: "/gripper/item_1/state"
+  ros_type_name: "std_msgs/msg/String"
+  gz_type_name: "gz.msgs.StringMsg"
+  direction: GZ_TO_ROS
+
+# DetachableJoint reports its real attach state here - the authoritative answer to
+# "is the parcel actually held?", far better than guessing from proximity.
+- ros_topic_name: "/gripper/item_2/state"
+  gz_topic_name: "/gripper/item_2/state"
+  ros_type_name: "std_msgs/msg/String"
+  gz_type_name: "gz.msgs.StringMsg"
+  direction: GZ_TO_ROS
+
+# DetachableJoint reports its real attach state here - the authoritative answer to
+# "is the parcel actually held?", far better than guessing from proximity.
+- ros_topic_name: "/gripper/item_3/state"
+  gz_topic_name: "/gripper/item_3/state"
+  ros_type_name: "std_msgs/msg/String"
+  gz_type_name: "gz.msgs.StringMsg"
+  direction: GZ_TO_ROS

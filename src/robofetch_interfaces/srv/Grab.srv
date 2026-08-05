@@ -1,0 +1,7 @@
+# Request the gripper to grab (attach) or release (detach) an item.
+string item          # model name of the item, e.g. "item_1"
+bool release false   # false = grab, true = release
+---
+bool success         # did the operation verifiably take effect?
+string message       # human-readable detail (used in logs and order history)
+float64 distance     # metres between gripper and item at verification time

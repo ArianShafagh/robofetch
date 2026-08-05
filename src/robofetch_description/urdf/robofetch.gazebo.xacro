@@ -1,0 +1,134 @@
+<?xml version="1.0"?>
+<!--
+  Gazebo Harmonic (gz-sim 8) plugins + sensors for RoboFetch.
+  These <gazebo> tags are ignored by plain URDF tools but read by gz sim when the
+  model is spawned. Topics here are *gz* topics; ros_gz_bridge maps them to ROS 2.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Differential drive: subscribes cmd_vel, publishes odom + odom to base TF -->
+  <gazebo>
+    <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
+      <left_joint>left_wheel_joint</left_joint>
+      <right_joint>right_wheel_joint</right_joint>
+      <wheel_separation>0.26</wheel_separation>
+      <wheel_radius>0.06</wheel_radius>
+      <odom_publish_frequency>30</odom_publish_frequency>
+      <max_linear_acceleration>1.0</max_linear_acceleration>
+      <topic>cmd_vel</topic>
+      <odom_topic>odom</odom_topic>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_footprint</child_frame_id>
+      <tf_topic>tf</tf_topic>
+    </plugin>
+  </gazebo>
+
+  <!-- Publishes joint angles so robot_state_publisher can turn the wheels in TF -->
+  <gazebo>
+    <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">
+      <topic>joint_states</topic>
+    </plugin>
+  </gazebo>
+
+  <!-- 2D lidar (gpu_lidar) publishes to gz topic "scan" -->
+  <gazebo reference="lidar_link">
+    <sensor name="lidar" type="gpu_lidar">
+      <topic>scan</topic>
+      <update_rate>10</update_rate>
+      <gz_frame_id>lidar_link</gz_frame_id>
+      <always_on>1</always_on>
+      <visualize>true</visualize>
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.141592</min_angle>
+            <max_angle>3.141592</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.12</min>
+          <max>12.0</max>
+          <resolution>0.01</resolution>
+        </range>
+      </lidar>
+    </sensor>
+  </gazebo>
+
+  <!-- Give links friction/material hints for stable contact. -->
+  <!-- Publish the robot's world pose on /model/robofetch/pose. Paired with the item's
+       pose publisher, this lets the gripper node measure the gripper-to-item gap in a
+       single common (world) frame. -->
+  <gazebo>
+    <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+      <publish_link_pose>false</publish_link_pose>
+      <publish_collision_pose>false</publish_collision_pose>
+      <publish_visual_pose>false</publish_visual_pose>
+      <publish_model_pose>true</publish_model_pose>
+      <use_pose_vector_msg>false</use_pose_vector_msg>
+      <static_publisher>false</static_publisher>
+      <!-- 5 Hz, not 20 - see the matching note in warehouse.sdf. This publisher plus the
+           three parcel ones all land in the gripper node's single rclpy executor, and at
+           20 Hz the combined ~70 callbacks/s wedged it completely. -->
+      <update_frequency>5</update_frequency>
+    </plugin>
+  </gazebo>
+
+  <!-- Keep gripper_link as a real link in the converted SDF.
+       URDF->SDF conversion "lumps" links joined by fixed joints into their parent, so
+       gripper_link would vanish into base_link and DetachableJoint could not find it. -->
+  <gazebo reference="gripper_joint">
+    <preserveFixedJoint>true</preserveFixedJoint>
+    <disableFixedJointLumping>true</disableFixedJointLumping>
+  </gazebo>
+
+  <!-- Simulated gripper: a DetachableJoint rigidly binds an item to gripper_link.
+       Publishing on attach_topic grabs it, detach_topic releases it, and output_topic
+       reports the current attach state.
+       NOTE: gz-sim 8 creates this joint ALREADY ATTACHED at startup and offers no
+       "suppress initial attach" option, so the gripper node publishes one detach on
+       start-up to guarantee a known, empty-handed initial state. -->
+  <!-- NOTE: giving each item its own dedicated attachment link was tried and REVERTED -
+       the extra links made the robot physically immovable in Gazebo (wheels spun and
+       odometry advanced while the body never moved). All items therefore share
+       gripper_link. -->
+  <xacro:macro name="grippable_item" params="name">
+    <gazebo>
+      <plugin filename="gz-sim-detachable-joint-system" name="gz::sim::systems::DetachableJoint">
+        <parent_link>gripper_link</parent_link>
+        <child_model>${name}</child_model>
+        <child_link>link</child_link>
+        <attach_topic>/gripper/${name}/attach</attach_topic>
+        <detach_topic>/gripper/${name}/detach</detach_topic>
+        <output_topic>/gripper/${name}/state</output_topic>
+      </plugin>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- One joint per deliverable item in the world; the gripper node drives whichever
+       one the current order refers to. -->
+  <xacro:grippable_item name="item_1"/>
+  <xacro:grippable_item name="item_2"/>
+  <xacro:grippable_item name="item_3"/>
+
+  <!-- High wheel friction so the drive wheels grip instead of skidding: wheel slip is
+       what corrupts the odometry that SLAM and AMCL depend on. -->
+  <gazebo reference="left_wheel">
+    <mu1>1.5</mu1><mu2>1.5</mu2>
+    <kp>1000000.0</kp><kd>100.0</kd>
+  </gazebo>
+  <gazebo reference="right_wheel">
+    <mu1>1.5</mu1><mu2>1.5</mu2>
+    <kp>1000000.0</kp><kd>100.0</kd>
+  </gazebo>
+  <!-- Casters glide with near-zero friction. Not exactly 0.0: perfectly frictionless
+       contacts are numerically degenerate and can jitter. -->
+  <gazebo reference="front_caster">
+    <mu1>0.02</mu1><mu2>0.02</mu2>
+  </gazebo>
+  <gazebo reference="rear_caster">
+    <mu1>0.02</mu1><mu2>0.02</mu2>
+  </gazebo>
+
+</robot>

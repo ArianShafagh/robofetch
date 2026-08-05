@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>robofetch_nav</name>
+  <version>0.1.0</version>
+  <description>RoboFetch navigation: SLAM mapping, saved map, AMCL localization and Nav2 configuration.</description>
+  <maintainer email="shafagh.arian2003@gmail.com">robojazzy</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>robofetch_gazebo</exec_depend>
+  <exec_depend>robofetch_description</exec_depend>
+  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>nav2_map_server</exec_depend>
+  <exec_depend>nav2_amcl</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,0 +1,175 @@
+<?xml version="1.0"?>
+<!--
+  RoboFetch differential-drive robot.
+  A xacro is a URDF with macros/variables so we don't repeat ourselves.
+  Expand it to plain URDF with:  xacro robofetch.urdf.xacro
+-->
+<robot name="robofetch" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ===================== Tunable dimensions (edit here, not below) ===================== -->
+  <xacro:property name="base_len"   value="0.35"/>   <!-- x: front-back -->
+  <xacro:property name="base_wid"   value="0.22"/>   <!-- y: left-right -->
+  <xacro:property name="base_hgt"   value="0.10"/>   <!-- z: height     -->
+  <xacro:property name="base_mass"  value="3.0"/>
+
+  <xacro:property name="wheel_radius"    value="0.06"/>
+  <xacro:property name="wheel_width"     value="0.04"/>
+  <xacro:property name="wheel_mass"      value="0.5"/>
+  <xacro:property name="wheel_separation" value="0.26"/>  <!-- distance between the two wheels (y) -->
+  <!-- Wheels sit directly under the chassis centre of mass so almost all the weight
+       rests on the driven wheels. Offsetting them (e.g. -0.10) shifts load onto the
+       casters, the wheels lose traction and skid during turns, which corrupts odometry. -->
+  <xacro:property name="wheel_xoff"      value="0.0"/>
+
+  <xacro:property name="caster_radius" value="0.03"/>
+  <!-- Two casters (front and rear) keep the robot level without carrying much load. -->
+  <xacro:property name="caster_xoff"   value="0.14"/>
+
+  <!-- Lift the chassis body so it clears the ground; with the box centred on base_link
+       there was only 1 cm of clearance and it scraped//dragged during motion. -->
+  <xacro:property name="body_zoff"     value="0.03"/>
+  <!-- Note: `pi` is a xacro built-in constant, so we don't define it here. -->
+
+  <!-- ===================== Reusable inertia macros ===================== -->
+  <xacro:macro name="box_inertia" params="m x y z">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia ixx="${(m/12.0)*(y*y+z*z)}" ixy="0" ixz="0"
+               iyy="${(m/12.0)*(x*x+z*z)}" iyz="0"
+               izz="${(m/12.0)*(x*x+y*y)}"/>
+    </inertial>
+  </xacro:macro>
+
+  <xacro:macro name="cylinder_inertia" params="m r l">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia ixx="${(m/12.0)*(3*r*r+l*l)}" ixy="0" ixz="0"
+               iyy="${(m/12.0)*(3*r*r+l*l)}" iyz="0"
+               izz="${(m/2.0)*(r*r)}"/>
+    </inertial>
+  </xacro:macro>
+
+  <xacro:macro name="sphere_inertia" params="m r">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia ixx="${(2.0/5.0)*m*r*r}" ixy="0" ixz="0"
+               iyy="${(2.0/5.0)*m*r*r}" iyz="0"
+               izz="${(2.0/5.0)*m*r*r}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- ===================== base_footprint (ground contact reference) ===================== -->
+  <!-- Nav2/AMCL conventions like a frame at ground level. base_link is lifted by wheel_radius. -->
+  <link name="base_footprint"/>
+
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child  link="base_link"/>
+    <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ===================== Chassis ===================== -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 ${body_zoff}"/>
+      <geometry><box size="${base_len} ${base_wid} ${base_hgt}"/></geometry>
+      <material name="blue"><color rgba="0.2 0.4 0.8 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${body_zoff}"/>
+      <geometry><box size="${base_len} ${base_wid} ${base_hgt}"/></geometry>
+    </collision>
+    <xacro:box_inertia m="${base_mass}" x="${base_len}" y="${base_wid}" z="${base_hgt}"/>
+  </link>
+
+  <!-- ===================== Wheel macro (used for left & right) ===================== -->
+  <xacro:macro name="wheel" params="prefix y_reflect">
+    <link name="${prefix}_wheel">
+      <visual>
+        <origin rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+        <material name="dark"><color rgba="0.1 0.1 0.1 1"/></material>
+      </visual>
+      <collision>
+        <origin rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+      </collision>
+      <xacro:cylinder_inertia m="${wheel_mass}" r="${wheel_radius}" l="${wheel_width}"/>
+    </link>
+
+    <joint name="${prefix}_wheel_joint" type="continuous">
+      <parent link="base_link"/>
+      <child  link="${prefix}_wheel"/>
+      <!-- wheel center is at base_link z=0, i.e. wheel_radius above the ground -->
+      <origin xyz="${wheel_xoff} ${y_reflect*wheel_separation/2} 0" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:wheel prefix="left"  y_reflect="1"/>
+  <xacro:wheel prefix="right" y_reflect="-1"/>
+
+  <!-- ===================== Casters (passive spheres, front + rear) ===================== -->
+  <xacro:macro name="caster" params="prefix x_pos">
+    <link name="${prefix}_caster">
+      <visual>
+        <geometry><sphere radius="${caster_radius}"/></geometry>
+        <material name="dark"><color rgba="0.1 0.1 0.1 1"/></material>
+      </visual>
+      <collision>
+        <geometry><sphere radius="${caster_radius}"/></geometry>
+      </collision>
+      <xacro:sphere_inertia m="0.1" r="${caster_radius}"/>
+    </link>
+
+    <joint name="${prefix}_caster_joint" type="fixed">
+      <parent link="base_link"/>
+      <child  link="${prefix}_caster"/>
+      <!-- lower it so its bottom touches the ground: z = -(wheel_radius - caster_radius) -->
+      <origin xyz="${x_pos} 0 ${-(wheel_radius - caster_radius)}" rpy="0 0 0"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:caster prefix="front" x_pos="${caster_xoff}"/>
+  <xacro:caster prefix="rear"  x_pos="${-caster_xoff}"/>
+
+  <!-- ===================== 2D Lidar mount ===================== -->
+  <link name="lidar_link">
+    <visual>
+      <geometry><cylinder radius="0.04" length="0.04"/></geometry>
+      <material name="red"><color rgba="0.8 0.1 0.1 1"/></material>
+    </visual>
+    <collision>
+      <geometry><cylinder radius="0.04" length="0.04"/></geometry>
+    </collision>
+    <xacro:cylinder_inertia m="0.1" r="0.04" l="0.04"/>
+  </link>
+
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="lidar_link"/>
+    <origin xyz="0.10 0 ${base_hgt/2 + 0.02}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ===================== Gripper link (item attaches here in M3) ===================== -->
+  <link name="gripper_link">
+    <visual>
+      <geometry><box size="0.04 0.10 0.04"/></geometry>
+      <material name="green"><color rgba="0.1 0.7 0.2 1"/></material>
+    </visual>
+    <collision>
+      <geometry><box size="0.04 0.10 0.04"/></geometry>
+    </collision>
+    <xacro:box_inertia m="0.1" x="0.04" y="0.10" z="0.04"/>
+  </link>
+
+  <joint name="gripper_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="gripper_link"/>
+    <origin xyz="${base_len/2 + 0.02} 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ===================== Gazebo (Harmonic) plugins & sensor ===================== -->
+  <xacro:include filename="$(find robofetch_description)/urdf/robofetch.gazebo.xacro"/>
+
+</robot>

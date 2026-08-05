@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RoboFetch</title>
+  <!-- Absolute paths on purpose. app.py serves this file at BOTH "/" (FileResponse) and
+       "/app/" (StaticFiles mount), but only /app is mounted - so a relative "style.css"
+       would resolve to "/style.css" and 404 whenever the page is opened at the root. -->
+  <link rel="stylesheet" href="/app/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">&#9673;</span>
+    <h1>RoboFetch</h1>
+    <span class="subtitle">warehouse delivery robot</span>
+  </div>
+  <div class="live">
+    <span id="robot-status" class="chip chip-idle">idle</span>
+    <span id="link" class="link link-down"><span class="dot"></span><span id="link-text">connecting</span></span>
+  </div>
+</header>
+
+<main class="grid">
+
+  <section class="panel panel-map">
+    <div class="panel-head">
+      <h2>Warehouse</h2>
+      <p class="hint">Parcel positions come straight from Gazebo &mdash; this is ground truth, not the order status.</p>
+    </div>
+    <div class="map-wrap">
+      <canvas id="map"></canvas>
+    </div>
+    <ul class="legend">
+      <li><i class="sw sw-robot"></i>robot</li>
+      <li><i class="sw sw-parcel"></i>parcel (live pose)</li>
+      <li><i class="sw sw-way"></i>waypoint</li>
+      <li><i class="sw sw-shelf"></i>shelf</li>
+      <li><i class="sw sw-station"></i>delivery station</li>
+    </ul>
+  </section>
+
+  <section class="panel panel-form">
+    <div class="panel-head"><h2>New order</h2></div>
+    <form id="order-form" autocomplete="off">
+      <label for="item">Parcel</label>
+      <select id="item" name="item" required></select>
+
+      <label for="point_a">Pick up from</label>
+      <select id="point_a" name="point_a" required></select>
+
+      <label for="point_b">Deliver to</label>
+      <select id="point_b" name="point_b" required></select>
+
+      <button type="submit" id="submit">Send order</button>
+      <p id="form-msg" class="form-msg" role="status"></p>
+    </form>
+
+    <div class="panel-head"><h2>Statistics</h2></div>
+    <div class="tiles" id="tiles">
+      <div class="tile"><span class="tile-value" id="stat-total">&mdash;</span><span class="tile-label">orders</span></div>
+      <div class="tile"><span class="tile-value ok" id="stat-completed">&mdash;</span><span class="tile-label">delivered</span></div>
+      <div class="tile"><span class="tile-value bad" id="stat-failed">&mdash;</span><span class="tile-label">failed</span></div>
+      <div class="tile"><span class="tile-value" id="stat-rate">&mdash;</span><span class="tile-label">success rate</span></div>
+      <div class="tile tile-wide"><span class="tile-value" id="stat-avg">&mdash;</span><span class="tile-label">average delivery time</span></div>
+    </div>
+  </section>
+
+  <section class="panel panel-orders">
+    <div class="panel-head">
+      <h2>Orders</h2>
+      <p class="hint">Live from the <code>/telemetry</code> WebSocket.</p>
+    </div>
+    <div class="table-wrap">
+      <table id="orders">
+        <thead>
+          <tr>
+            <th class="col-id">#</th>
+            <th>Parcel</th>
+            <th>Route</th>
+            <th>Status</th>
+            <th class="col-try">Tries</th>
+            <th>Detail</th>
+            <th class="col-act"></th>
+          </tr>
+        </thead>
+        <tbody id="orders-body">
+          <tr class="empty"><td colspan="7">No orders yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<script src="/app/app.js"></script>
+</body>
+</html>
