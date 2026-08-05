@@ -3,16 +3,17 @@
 Complete state of the project: what exists, how to run it, every problem hit and how it was
 solved, and what remains. Written so a fresh session (or a new person) can pick it up cold.
 
-**Last updated:** 2026-08-05 · **Status:** M1–M8 complete, M9 remaining · **50 tests passing**
+**Last updated:** 2026-08-05 · **Status:** M1–M9 complete · **63 tests + 10 acceptance checks passing**
 
-> **2026-08-05:** end to end **works and is confirmed against Gazebo** — 4/4 deliveries completed
-> (0.66, 0.59, 0.76 and 0.65 m from target), one of them **with the Gazebo and RViz GUIs running**,
-> not just headless. Use `./scripts/order.sh` rather than a bare `curl`: it checks the failure modes
-> in §5.9 before submitting and verifies the parcel really moved afterwards.
+> **2026-08-05 — all nine milestones complete.** Full acceptance suite passes **10/10** against the
+> live simulator, every physical claim confirmed against Gazebo ground truth
+> (`./robofetch_venv/bin/python scripts/acceptance.py`). 63 pytest tests pass.
 >
-> Still outstanding: the robot can occasionally trap itself in the 0.90 m corridor behind `shelf_1` /
-> `shelf_2`, after which AMCL drifts and no goal can be planned (§5.5); and the gripper still cannot
-> tell a failed attach from a successful one (§7).
+> The two long-standing blockers are **fixed**: `shelf_1`/`shelf_2` are now flush to the north wall,
+> removing the 0.90 m corridor that trapped the robot (§5.5); and the gripper now verifies grabs
+> against the DetachableJoint's own `attached`/`detached` state instead of guessing from proximity
+> (§5.10). Remaining known limitations are in §7 — chiefly ~0.6–0.8 m delivery accuracy and the fact
+> that cancelling does not stop a robot that has already started.
 
 ---
 
@@ -416,6 +417,28 @@ full delivery completes. 5 Hz is ample for both the gripper's gap check and the 
 Geometry did **not** change, so the map does not need regenerating. If you add more per-model pose
 publishers, remember they all land in the same executor — the budget is shared.
 
+### 5.10 The grab check that could not fail (fixed)
+
+`on_grab` used to measure the item-to-robot gap, publish attach, sleep, and measure again —
+accepting the grab if the gap was still within tolerance. If the attach silently did nothing,
+**neither body moved**, so the second measurement equalled the first and the check passed. Same
+shape as the "3/3 delivered" bug in §5.4, one layer further down.
+
+Fixed by subscribing to the DetachableJoint's `<output_topic>` (`/gripper/<item>/state`), which
+publishes the literal strings `attached` / `detached`. Confirmed by reading them out of the plugin
+binary, and live: the gripper now logs
+`grabbed item_1 (joint reports 'attached', gap 0.50 m)`.
+
+Two things to know if you touch this:
+- **The topic fires only on TRANSITIONS**, so the subscription must exist before the start-up
+  detach. It is created in the constructor, not lazily in `on_grab`, for exactly that reason.
+  `ros2 topic echo ... --once` will hang on it — nothing is retained.
+- **A proximity fallback remains** for the case where the joint has never reported, and it says so
+  in the response message rather than pretending to be authoritative.
+
+`on_release` verifies the same way: a detach that did not take hold would otherwise leave the parcel
+welded to the gripper and dragged into the next delivery.
+
 ### 5.9 "I submitted an order and nothing happened"
 
 The single most confusing failure in the project, because **every** cause returns the same valid JSON
@@ -455,7 +478,7 @@ three in one request — a stale API answers with `robot_connected: false` and t
 | M6 | **Grab-retry FSM** | ✅ | 3 attempts w/ backoff → order failed → queue continued |
 | M7 | FastAPI + SQLite + bridge | ✅ | HTTP → SQLite → ROS → robot → status back to SQLite |
 | M8 | **Web dashboard** | ✅ | `localhost:8000` — order form, live table, warehouse map, analytics; verified end to end |
-| M9 | Bringup + tests + report | ⬜ **next** | 50 unit tests exist; integration/acceptance to formalise |
+| M9 | **Bringup + tests + report** | ✅ | 63 pytest + 10 acceptance checks, README, UML diagrams |
 
 ---
 

@@ -91,17 +91,28 @@
          Different sizes and orientations, asymmetrically placed, 0.8 m tall so the lidar
          always sees them. Each parcel sits on the floor at the front edge of its shelf. -->
 
-    <!-- Shelf 1: long, north-west -->
-    <model name="shelf_1"><static>true</static><pose>-2.5 1.8 0.4 0 0 0</pose><link name="l">
-      <collision name="c"><geometry><box><size>2.0 0.5 0.8</size></box></geometry></collision>
-      <visual name="v"><geometry><box><size>2.0 0.5 0.8</size></box></geometry>
+    <!-- Shelves 1 and 2 are FLUSH against the north wall, for the same reason shelf_3 is
+         flush against the east wall (see below).
+         They used to be 0.5 m deep at y=1.8, which left a 0.90 m corridor running the
+         whole length of the north side, reachable through the 2.25 m gap between them. A
+         0.44 m robot with 0.35 m costmap inflation cannot turn around in 0.90 m: it drove
+         in, wedged, and AMCL then drifted 2.85 m. With the scan coming from behind a shelf
+         while the costmap was drawn around the believed pose, the robot appeared enclosed
+         and the planner failed EVERY goal - including the empty centre of the room.
+         Deepening them (rather than sliding them back) keeps each front face at y=1.55, so
+         the parcel spawn poses and the pickup waypoints are unchanged. -->
+
+    <!-- Shelf 1: long, north-west. Front face y=1.55, back face flush to the wall at 2.95. -->
+    <model name="shelf_1"><static>true</static><pose>-2.5 2.25 0.4 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>2.0 1.4 0.8</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>2.0 1.4 0.8</size></box></geometry>
         <material><ambient>0.55 0.35 0.15 1</ambient><diffuse>0.55 0.35 0.15 1</diffuse></material></visual>
     </link></model>
 
-    <!-- Shelf 2: shorter, north-east -->
-    <model name="shelf_2"><static>true</static><pose>1.5 1.8 0.4 0 0 0</pose><link name="l">
-      <collision name="c"><geometry><box><size>1.5 0.5 0.8</size></box></geometry></collision>
-      <visual name="v"><geometry><box><size>1.5 0.5 0.8</size></box></geometry>
+    <!-- Shelf 2: shorter, north-east. Same treatment. -->
+    <model name="shelf_2"><static>true</static><pose>1.5 2.25 0.4 0 0 0</pose><link name="l">
+      <collision name="c"><geometry><box><size>1.5 1.4 0.8</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>1.5 1.4 0.8</size></box></geometry>
         <material><ambient>0.55 0.35 0.15 1</ambient><diffuse>0.55 0.35 0.15 1</diffuse></material></visual>
     </link></model>
 

@@ -30,9 +30,11 @@ WALLS = [
     (-4.0, 0.0, 0.1, 6.1),    # wall_west
     # Shelves. These are real obstacles AND the features that make each part of the
     # room look distinctive to the laser, which is what keeps localization stable.
-    (-2.5, 1.8, 2.0, 0.5),    # shelf_1  north-west, long
-    (1.5,  1.8, 1.5, 0.5),    # shelf_2  north-east, shorter
-    (3.6, -1.0, 0.5, 2.0),    # shelf_3  east, rotated 90 deg, flush to the wall
+    # All three are FLUSH against a wall. Standing a shelf off the wall leaves a corridor
+    # too narrow for the robot to turn around in, which strands it and wrecks localization.
+    (-2.5, 2.25, 2.0, 1.4),   # shelf_1  north-west, long,    flush to the north wall
+    (1.5,  2.25, 1.5, 1.4),   # shelf_2  north-east, shorter, flush to the north wall
+    (3.6, -1.0,  0.5, 2.0),   # shelf_3  east, rotated 90 deg, flush to the east wall
     # NOTE: delivery_station is a floor marking only - deliberately NOT an obstacle.
 ]
 

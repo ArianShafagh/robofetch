@@ -23,7 +23,7 @@ import rclpy
 from geometry_msgs.msg import Pose, PoseWithCovarianceStamped
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
-from std_msgs.msg import Empty
+from std_msgs.msg import Empty, String
 
 from robofetch_interfaces.srv import Grab
 
@@ -67,6 +67,24 @@ class GripperNode(Node):
         self.items = list(self.get_parameter("items").value)
         for item in self.items:
             self._watch_model(item)
+
+        # AUTHORITATIVE attach state, straight from the DetachableJoint's <output_topic>
+        # (bridged for every item in bridge.yaml). It publishes the literal strings
+        # "attached" / "detached".
+        #
+        # This is what makes a grab check meaningful. Comparing the gap before and after an
+        # attach cannot distinguish "the joint took hold" from "the command did nothing",
+        # because in the second case NEITHER body moves and the after-check passes
+        # trivially - the same shape of bug as the "3/3 delivered" incident in HANDOVER 5.4,
+        # one layer further down. The joint's own state has no such blind spot.
+        #
+        # The topic fires only on TRANSITIONS, so these subscriptions must exist before the
+        # start-up detach below - which is why they are created here in the constructor and
+        # not lazily inside on_grab.
+        self.attach_state = {}
+        self._state_subs = {}
+        for item in self.items:
+            self._watch_state(item)
 
         # The robot's position comes from AMCL rather than its Gazebo PosePublisher.
         # PosePublisher only emits on change and was observed going quiet mid-run, which
@@ -115,6 +133,20 @@ class GripperNode(Node):
             lambda msg, n=name: self.poses.__setitem__(
                 n, (msg.position.x, msg.position.y, msg.position.z)),
             10)
+
+    def _watch_state(self, name):
+        """Track what the DetachableJoint says about this item: attached or detached."""
+        if name in self._state_subs:
+            return
+        self._state_subs[name] = self.create_subscription(
+            String, f"/gripper/{name}/state",
+            lambda msg, n=name: self.attach_state.__setitem__(n, msg.data.strip()),
+            10)
+
+    def _is_held(self, item):
+        """True/False from the joint itself, or None if it has never reported."""
+        state = self.attach_state.get(item)
+        return None if state is None else state == "attached"
 
     def _initial_release_once(self):
         if self._did_initial_release:
@@ -194,6 +226,7 @@ class GripperNode(Node):
     def on_grab(self, request, response):
         item = request.item or "item_1"
         self._watch_model(item)
+        self._watch_state(item)
         attach, _ = self._pubs_for(item)
 
         self._await_poses(item)
@@ -219,20 +252,33 @@ class GripperNode(Node):
         time.sleep(self.settle_time)
 
         gap_after = self._gap_to_gripper(item)
-        ok = gap_after is not None and gap_after <= self.hold_tolerance
+        held = self._is_held(item)
+
+        if held is None:
+            # The joint has never reported - fall back to proximity, but SAY SO. This is
+            # the weak check: it cannot tell a real attach from a command that did nothing.
+            ok = gap_after is not None and gap_after <= self.hold_tolerance
+            evidence = "proximity only - the joint has not reported its state"
+        else:
+            ok = held
+            evidence = f"joint reports '{self.attach_state[item]}'"
+
         response.success = ok
         response.distance = gap_after if gap_after is not None else -1.0
+        gap_text = f"{gap_after:.2f} m" if gap_after is not None else "unknown"
         if ok:
             self.held_item = item
-            response.message = f"grabbed {item} (gap {gap_after:.2f} m)"
+            response.message = f"grabbed {item} ({evidence}, gap {gap_text})"
             self.get_logger().info(response.message)
         else:
-            response.message = f"attach command sent but {item} is not held"
+            response.message = (f"attach command sent but {item} is NOT held "
+                                f"({evidence}, gap {gap_text})")
             self.get_logger().warn(f"Grab failed: {response.message}")
         return response
 
     def on_release(self, request, response):
         item = request.item or self.held_item or "item_1"
+        self._watch_state(item)
         _, detach = self._pubs_for(item)
 
         detach.publish(Empty())
@@ -241,10 +287,18 @@ class GripperNode(Node):
         if self.held_item == item:
             self.held_item = None
         gap = self._gap_to_gripper(item)
-        response.success = True
+
+        # A release that did not actually let go strands the parcel on the gripper and the
+        # next delivery drags it around, so confirm rather than assume.
+        still_held = self._is_held(item)
+        response.success = still_held is not True
         response.distance = gap if gap is not None else -1.0
-        response.message = f"released {item}"
-        self.get_logger().info(response.message)
+        if response.success:
+            response.message = f"released {item}"
+            self.get_logger().info(response.message)
+        else:
+            response.message = f"detach command sent but the joint still reports {item} attached"
+            self.get_logger().warn(f"Release failed: {response.message}")
         return response
 
 
