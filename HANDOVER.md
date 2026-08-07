@@ -456,6 +456,24 @@ welded to the gripper and dragged into the next delivery.
 
 ### 5.11 v2 traps worth knowing
 
+**`stop.sh` missed the SECOND web service.** v2 added `robofetch_ai` on port 8001, and the
+pattern only matched the bridge, so the AI service survived every stop exactly the way the API
+used to. The next launch's predictor then died with "address already in use" and every admission
+decision silently fell back to the policy-only path - the system looked fine, just quietly
+without its model. Found one orphan 37 minutes old. The pattern is now `uvicorn robofetch_`
+rather than a list of names, so a service added later is covered without anyone remembering to
+update it, and `run.sh` pre-flights **both** ports.
+
+**colcon does not delete files you removed from source.** Replacing the v1 dashboard left
+`index.html`, `app.js` and `style.css` behind in `install/robofetch_web/share/.../web/` as
+DANGLING symlinks pointing at files that no longer exist. Harmless here, but the general fix when
+a package's file layout changes is `rm -rf build/<pkg> install/<pkg>` before rebuilding.
+
+**The v1 dashboard URL was `/app`.** Anyone with that bookmarked got a 404 after the upgrade, and
+a browser holding the old cached page at `/` showed the v1 UI as though nothing had changed.
+`/app/*` now 308-redirects to `/`, and every page sends `Cache-Control: no-store` - which it
+needs anyway, since each page is a snapshot of live state.
+
 **`Jinja2Templates.TemplateResponse` changed signature.** Starlette >= 0.29 wants
 `TemplateResponse(request, name, context)`. Passing the old `(name, context)` form makes it read
 the template NAME as the request and the context dict as the name, and it dies deep inside the

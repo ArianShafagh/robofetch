@@ -214,8 +214,22 @@ def health():
 
 
 # --------------------------------------------------------------------- HTML pages
+# Every page is a snapshot of live state - orders in flight, battery, temperature - so it must
+# never be served from the browser cache. This also matters for the v1 -> v2 upgrade: the old
+# dashboard was a static file at "/", which browsers cache aggressively, so without this a
+# returning user keeps seeing the old page and reasonably concludes nothing changed.
+NO_CACHE = {"Cache-Control": "no-store, must-revalidate", "Pragma": "no-cache"}
+
+
 def _page_context(request):
     return {"request": request, "robot": db.get_robot_state()}
+
+
+@app.get("/app")
+@app.get("/app/{path:path}")
+def legacy_dashboard(path: str = ""):
+    """The v1 dashboard lived under /app. Send old links and bookmarks to the new UI."""
+    return RedirectResponse("/", status_code=308)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -223,7 +237,7 @@ def page_order_form(request: Request):
     context = _page_context(request)
     context.update(products=db.list_products(),
                    deliveries=db.list_delivery_points())
-    return templates.TemplateResponse(request, "order.html", context)
+    return templates.TemplateResponse(request, "order.html", context, headers=NO_CACHE)
 
 
 @app.post("/preview", response_class=HTMLResponse)
@@ -235,7 +249,7 @@ def page_preview(request: Request, product_id: str = Form(...),
     context.update(product=product, delivery=delivery, estimate=cost,
                    decision=decision, reason=reason, decided_by=decided_by,
                    accepted=decision == admission.ACCEPTED)
-    return templates.TemplateResponse(request, "preview.html", context)
+    return templates.TemplateResponse(request, "preview.html", context, headers=NO_CACHE)
 
 
 @app.post("/confirm")
@@ -249,7 +263,7 @@ def page_orders(request: Request):
     context = _page_context(request)
     context.update(orders=list(reversed(db.list_orders())),
                    stats=db.analytics())
-    return templates.TemplateResponse(request, "orders.html", context)
+    return templates.TemplateResponse(request, "orders.html", context, headers=NO_CACHE)
 
 
 @app.get("/robot", response_class=HTMLResponse)
@@ -257,7 +271,7 @@ def page_robot(request: Request):
     context = _page_context(request)
     context.update(stats=db.analytics(), telemetry=db.list_telemetry(limit=20),
                    ai=predictor.status())
-    return templates.TemplateResponse(request, "robot.html", context)
+    return templates.TemplateResponse(request, "robot.html", context, headers=NO_CACHE)
 
 
 # Static CSS. Templates are rendered above; only the stylesheet is served as a file.

@@ -26,19 +26,22 @@ done
 echo "[run] 1/4  stopping anything left over from a previous run ..."
 bash "$WS/scripts/stop.sh" || true
 
-# Refuse to launch into a port clash. If something still holds 8000, uvicorn dies with
-# "[Errno 98] address already in use" buried in thousands of Nav2 lines, while curl keeps
-# answering normally - from the OLD process, wired to a different database and no robot.
-# Every order you submit then vanishes into it. Far better to stop here and say so.
-if ss -lptn 'sport = :8000' 2>/dev/null | tail -n +2 | grep -q .; then
-  echo
-  echo "[run] ERROR: port 8000 is STILL in use after stop.sh:"
-  ss -lptn 'sport = :8000' | tail -n +2
-  echo
-  echo "[run] The web API cannot bind, so orders you POST would go to that stale process"
-  echo "[run] instead of to the robot. Kill the PID shown above and run this again."
-  exit 1
-fi
+# Refuse to launch into a port clash. If something still holds one of these ports, uvicorn
+# dies with "[Errno 98] address already in use" buried in thousands of Nav2 lines while the
+# port keeps answering normally - from the OLD process. On 8000 that means orders vanish into
+# a stale API wired to a different database; on 8001 it means every admission decision quietly
+# falls back to the policy-only path because the new predictor never started.
+for PORT in 8000 8001; do
+  if ss -lptn "sport = :$PORT" 2>/dev/null | tail -n +2 | grep -q .; then
+    echo
+    echo "[run] ERROR: port $PORT is STILL in use after stop.sh:"
+    ss -lptn "sport = :$PORT" | tail -n +2
+    echo
+    echo "[run] That process would shadow the one this launch starts. Kill the PID above"
+    echo "[run] and run this again."
+    exit 1
+  fi
+done
 
 echo "[run] 2/4  sourcing ROS 2 Jazzy ..."
 source /opt/ros/jazzy/setup.bash
