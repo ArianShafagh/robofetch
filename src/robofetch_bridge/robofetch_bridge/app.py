@@ -220,6 +220,10 @@ def health():
 # returning user keeps seeing the old page and reasonably concludes nothing changed.
 NO_CACHE = {"Cache-Control": "no-store, must-revalidate", "Pragma": "no-cache"}
 
+# How often the live-state pages reload themselves, via <meta http-equiv="refresh">. Applied to
+# /orders and /robot only - /preview is the result of a POST and reloading it would re-submit.
+PAGE_REFRESH_SECONDS = 10
+
 
 def _page_context(request):
     return {"request": request, "robot": db.get_robot_state()}
@@ -262,7 +266,8 @@ def page_confirm(product_id: str = Form(...), delivery_id: str = Form(...)):
 def page_orders(request: Request):
     context = _page_context(request)
     context.update(orders=list(reversed(db.list_orders())),
-                   stats=db.analytics())
+                   stats=db.analytics(),
+                   refresh_seconds=PAGE_REFRESH_SECONDS)
     return templates.TemplateResponse(request, "orders.html", context, headers=NO_CACHE)
 
 
@@ -270,7 +275,7 @@ def page_orders(request: Request):
 def page_robot(request: Request):
     context = _page_context(request)
     context.update(stats=db.analytics(), telemetry=db.list_telemetry(limit=20),
-                   ai=predictor.status())
+                   ai=predictor.status(), refresh_seconds=PAGE_REFRESH_SECONDS)
     return templates.TemplateResponse(request, "robot.html", context, headers=NO_CACHE)
 
 
