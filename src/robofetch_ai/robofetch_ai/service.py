@@ -30,7 +30,7 @@ _load_error = None
 
 
 def _load():
-    """Load the model once, lazily, and remember why if it fails.
+    """Load the model once and remember why if it fails.
 
     A missing model is not a crash: the service stays up and reports `model_loaded: false`,
     so the caller can distinguish "the AI says no" from "there is no AI", which are very
@@ -44,6 +44,19 @@ def _load():
         _bundle = joblib.load(MODEL_PATH)
     except Exception as exc:                                       # noqa: BLE001
         _load_error = str(exc)
+
+
+@app.on_event("startup")
+async def _warm_up():
+    """Load the model when the service starts, NOT on the first request.
+
+    Importing scikit-learn and unpickling the forest takes over a second, which is longer
+    than the caller's timeout. Loading lazily therefore meant the very first prediction after
+    a restart always timed out and silently fell back to the policy-only path - so the first
+    order of every session never got the model, while every later one did. Doing the work at
+    start-up moves that cost to a moment when nobody is waiting.
+    """
+    _load()
 
 
 class Features(BaseModel):

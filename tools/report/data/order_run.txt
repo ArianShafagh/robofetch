@@ -1,0 +1,30 @@
+[order] checking the API on localhost:8000 ...
+[order]   database        : /home/robojazzy/robofetch_ws/robofetch.db
+[order]   robot connected : True
+[order] asking whether the robot will take SKU-3001 to delivery_1 ...
+  product : SKU-3001 - Li-ion battery pack, 48 V (4.5 kg)
+  route   : 8.6 m + 3.0 m back to the station
+  cost    : 6.11 Wh, ~56 s
+  after   : battery 82.1%, peak 56.8 C
+  verdict : ACCEPTED (decided by model)
+  reason  : 8.6 m, 6.1 Wh, ~56 s; battery 82% after returning to the station
+  AI      : reachable (http://localhost:8001)
+
+[order] submitted as order 1
+
+  pending      
+  navigating   heading to (2.75, -1.5)
+  grabbing     attempt 1 of 3
+  delivering   carrying to (-3.0, -2.2)
+  releasing    releasing the parcel
+  completed    delivered (0.74 m from target)
+
+[order] final status: completed
+[order] detail       : delivered (0.74 m from target)
+
+[order] verifying against Gazebo ground truth ...
+[order]   parcel_5 (SKU-3001) is really at (-2.27, -2.10)
+[order]   delivery_1 is at            (-3.00, -2.20)
+[order]   distance from the bay: 0.74 m
+
+[order]   VERIFIED: the parcel really was delivered.

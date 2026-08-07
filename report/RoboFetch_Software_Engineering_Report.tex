@@ -994,6 +994,23 @@ user before anything is committed. It displays the product, the route, the predi
 time, the battery level the robot would be left with, the peak temperature the job would produce,
 and the decision with its reason.
 
+\uploadedfigure{Figures/shot-order-form.png}{0.95\textwidth}
+{The order form. The client chooses a product and a destination; the catalogue below shows the
+weight and storage location of each product, and no coordinates appear anywhere.}{fig:shotform}
+
+\uploadedfigure{Figures/shot-preview-accepted.png}{0.95\textwidth}
+{An accepted order preview. The predicted route, energy, time, resulting battery level and peak
+motor temperature are shown before the order is committed, and the header reports the robot's
+condition on every page.}{fig:shotaccepted}
+
+\uploadedfigure{Figures/shot-orders-page.png}{0.95\textwidth}
+{The order history after four deliveries. Each row carries the predicted energy alongside the
+measured result, which is what makes the two comparable afterwards.}{fig:shotorders}
+
+\uploadedfigure{Figures/shot-robot-page.png}{0.95\textwidth}
+{The robot condition page. The robot's position is deliberately absent: this page answers whether
+the robot is fit to work, not where it is.}{fig:shotrobot}
+
 % ============================================================
 \chapter{Complex Functionality in Detail}
 \label{ch:complex}
@@ -1154,6 +1171,17 @@ physics has already allowed. It can never approve one that the physics rejected.
 concrete sense in which the model is a component inside the system's logic rather than the logic
 itself, and it is enforced by a test that supplies a classifier which always answers ``feasible''
 and asserts that an order with a flat battery is still refused.
+
+Figure~\ref{fig:shotrefused} shows this happening on the running system. The robot had already
+completed four deliveries and its motors were at 68 degrees. Asking it for the heaviest product
+again produced a refusal from the thermal gate, and the page states that the decision was taken by
+the safety policy with no model consulted, because the gate refused the order before the classifier
+was ever reached.
+
+\uploadedfigure{Figures/shot-preview-refused.png}{0.95\textwidth}
+{A refused order. The predicted peak temperature exceeds the limit, so the thermal gate refuses
+before the classifier is consulted at all - which is exactly the ordering the workflow is designed
+around.}{fig:shotrefused}
 
 \subsection{Behaviour When the Model Is Unavailable}
 If the prediction service cannot be reached, the client returns nothing and the workflow proceeds
@@ -1323,6 +1351,19 @@ because a world left over from a previous run would cause failures for the wrong
 \uploadedfigure{Figures/fig-acceptance-results.png}{0.95\textwidth}
 {Results of the acceptance suite against the live system.}{fig:acceptance}
 
+\uploadedfigure{Figures/shot-acceptance.png}{0.97\textwidth}
+{The acceptance suite running against the live system. Each line names the requirement it checks
+and the value it measured.}{fig:shotacceptance}
+
+The same verification is available for a single order. Figure~\ref{fig:shotorder} shows the helper
+script placing one order and following it: the admission verdict and its reasoning, then each state
+the order passes through, and finally the parcel's real position read back from the simulator and
+compared with the delivery bay.
+
+\uploadedfigure{Figures/shot-order-script.png}{0.97\textwidth}
+{Placing a single order from the command line. The last three lines are the ground-truth check:
+the parcel's real position, the position of the bay, and the distance between them.}{fig:shotorder}
+
 \begin{longtable}{@{}p{0.10\textwidth}p{0.40\textwidth}p{0.44\textwidth}@{}}
 \toprule
 \textbf{Req.} & \textbf{Check} & \textbf{Measured result} \\
@@ -1332,7 +1373,7 @@ SETUP & System ready and parcels in place & Robot connected, six parcels on thei
 UC5 & Catalogue and layout served from the database & Six products, two destinations, weights from
 0.3 to 4.5 kg \\
 UC9 & Preview returns a cost and a verdict & 8.6 m, 6.11 Wh, peak 57.5 C, accepted \\
-NFR1 & Preview responds within two seconds & 368 ms \\
+NFR1 & Preview responds within two seconds & 283 ms \\
 C2 & The classifier is consulted inside the workflow & Decision attributed to the model \\
 NFR3 & Pages render server-side with no JavaScript & All pages returned successfully, no scripts \\
 UC1 & An order can be submitted by product identifier & Accepted, predicted 3.71 Wh \\
@@ -1376,8 +1417,13 @@ exactly straight.
 
 \subsection{Response Time}
 The order preview, which includes resolving the product, computing the route, simulating the
-condition model forward and calling the prediction service over HTTP, was measured at 368 and 420
-milliseconds in two separate runs, against a requirement of two seconds.
+condition model forward and calling the prediction service over HTTP, was measured at 283
+milliseconds against a requirement of two seconds.
+
+That figure was originally much worse, and the reason is described in
+Section~\ref{sec:coldstart}: the very first preview after a restart took 1551 milliseconds and the
+prediction timed out entirely. Loading the model when the service starts rather than when the first
+request arrives brought the measurement down to its present value.
 
 % ============================================================
 \chapter{Development Environment and Engineering Challenges}
@@ -1570,6 +1616,30 @@ Both were quick to fix once understood, and both took far longer to diagnose tha
 general lesson is that an error message often describes the symptom at the point where a value
 finally became unusable, not the point where the mistake was made.
 
+\subsection{The First Prediction of Every Session Was Lost}
+\label{sec:coldstart}
+This one was found by the acceptance suite rather than by a person, which is the best argument for
+having written it.
+
+The check that confirms the classifier is actually consulted began failing, while every later order
+in the same run reported that the model had been used. The prediction service was running, the
+model was loaded, and a manual request answered instantly.
+
+The cause was that the service loaded its model on the first request rather than at start-up.
+Importing the machine-learning library and reconstructing a two-hundred-tree forest takes longer
+than a second, which is longer than the calling side is willing to wait. The very first prediction
+after a restart therefore timed out, the caller correctly fell back to the deterministic policy, and
+every subsequent request was fast because the model was by then in memory. The system behaved
+exactly as designed: it degraded instead of failing. The problem was that it degraded every single
+session, for the first order, silently.
+
+Loading the model when the service starts fixed it. The measured preview time fell from 1551
+milliseconds to 283, and the acceptance suite returned to a full pass.
+
+There are two lessons. The first is that a graceful fallback can hide a defect, because nothing
+appears to be broken. The second is that lazily initialising something expensive moves the cost to
+the least convenient possible moment: the first real request, when someone is waiting.
+
 \subsection{Summary of the Challenges}
 
 \begin{longtable}{@{}p{0.30\textwidth}p{0.28\textwidth}p{0.34\textwidth}@{}}
@@ -1592,6 +1662,8 @@ Deliveries abandoned part way & Dragging the parcel looked like a stall & Near-z
 friction \\
 Every page failed after an upgrade & Changed argument order in a library, and links rejected by
 the file server & Updated the call; allowed links to be followed \\
+First prediction of each session lost & The model was loaded on the first request, more slowly
+than the caller would wait & Load the model when the service starts \\
 \bottomrule
 \caption{The main problems encountered and their resolutions.}
 \label{tab:challenges}
@@ -1691,7 +1763,7 @@ FR12 & Per-run log writer & Acceptance check FR12 \\
 FR13 & Order history page and endpoint & Integration test \\
 FR14 & Catalogue and layout access methods & Unit tests \\
 FR15 & Statistics query & Unit test; acceptance check UC6 \\
-NFR1 & Timeout on the prediction client & Acceptance check NFR1, measured at 368 ms \\
+NFR1 & Timeout on the prediction client & Acceptance check NFR1, measured at 283 ms \\
 NFR2 & Fallback path in the admission workflow & Unit test with an unreachable service \\
 NFR3 & Server-side templates & Acceptance check NFR3 \\
 NFR4 & One-second publication interval & Telemetry record \\
@@ -1735,6 +1807,13 @@ model \\
 \ref{fig:acceptance} & Acceptance results \\
 \ref{fig:accuracy} & Delivery accuracy \\
 \ref{fig:predvsactual} & Predicted against measured route length \\
+\ref{fig:shotform} & Screenshot: the order form \\
+\ref{fig:shotaccepted} & Screenshot: an accepted order preview \\
+\ref{fig:shotrefused} & Screenshot: a refused order preview \\
+\ref{fig:shotorders} & Screenshot: the order history \\
+\ref{fig:shotrobot} & Screenshot: the robot condition page \\
+\ref{fig:shotorder} & Screenshot: placing one order from the command line \\
+\ref{fig:shotacceptance} & Screenshot: the acceptance suite running \\
 \bottomrule
 \end{longtable}
 

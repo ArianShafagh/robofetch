@@ -100,10 +100,8 @@ def main():
         print("[order]   'address already in use'.")
         return 1
 
-    ai = health.get("ai_service", {})
     print(f"[order]   database        : {health.get('database')}")
     print(f"[order]   robot connected : {health.get('robot_connected')}")
-    print(f"[order]   AI service      : {ai.get('reachable')} ({ai.get('url')})")
 
     if not health.get("robot_connected"):
         print()
@@ -137,6 +135,11 @@ def main():
     print(f"  verdict : {preview['decision'].upper()} "
           f"(decided by {preview['decided_by']})")
     print(f"  reason  : {preview['reason']}")
+
+    _, health = api("/health", timeout=5)
+    ai = health.get("ai_service", {})
+    state = {True: "reachable", False: "unreachable", None: "not consulted"}[ai.get("reachable")]
+    print(f"  AI      : {state} ({ai.get('url')})")
 
     if preview["decision"] != "accepted":
         print()

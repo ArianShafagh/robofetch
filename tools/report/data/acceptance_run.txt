@@ -1,0 +1,34 @@
+RoboFetch v2 acceptance tests
+==========================================================================
+  PASS  SETUP    API up, robot connected, all 6 parcels on their shelves
+         database=/home/robojazzy/robofetch_ws/robofetch.db, AI=http://localhost:8001
+  PASS  UC5      catalogue and layout are served from the database
+         6 products, 2 destinations, weights [0.3, 0.6, 1.1, 1.8, 3.2, 4.5]
+  PASS  UC9      order preview returns a cost and a verdict
+         8.6 m, 6.11 Wh, peak 56.8 C -> accepted (by model)
+  PASS  NFR1     preview (including the ML call) responds within 2 s
+         283 ms
+  PASS  C2       the classifier is consulted inside the admission workflow
+         ai_service={'url': 'http://localhost:8001', 'reachable': True, 'error': None}, decided_by=model
+  PASS  NFR3     all pages render server-side with no JavaScript
+         / -> 200, /orders -> 200, /robot -> 200
+  PASS  UC1      an order can be submitted by product ID
+         order 1 for SKU-1001, accepted by model, predicted 3.71 Wh
+  PASS  UC2      an order can be tracked to a terminal state
+         order 1 -> completed: delivered (0.65 m from target)
+  PASS  UC4      the parcel is physically delivered (Gazebo ground truth)
+         parcel_1 at (-3.13, -1.57), 0.65 m from the bay, moved 2.92 m
+  PASS  FR10     battery, temperature and condition are tracked
+         battery 92.0%, temp 46.7 C, condition 99.97%, state=idle
+  PASS  FR12     the run is logged to CSV for ML training
+         run_20260807_180143.csv: 37 samples
+  PASS  FR5      an order the robot cannot serve is refused, with a reason
+         status=refused, reason='SKU-1002 is out of stock'
+  PASS  FR6      orders are served oldest-first (FIFO)
+         submitted [3, 4], started [3, 4] - the earlier order ran first
+  PASS  FR8      a failing grab is retried 3 times, then the order fails
+         order 5 -> failed after 3 attempts: could not grab parcel_6 in 3 attempts; returning to station
+  PASS  UC6      analytics agree with the orders table
+         reported 3/5 completed and 1 refused; counted 3 and 1; rate=0.75
+==========================================================================
+15/15 checks passed
