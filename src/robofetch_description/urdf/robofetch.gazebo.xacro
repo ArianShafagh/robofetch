@@ -108,9 +108,12 @@
 
   <!-- One joint per deliverable item in the world; the gripper node drives whichever
        one the current order refers to. -->
-  <xacro:grippable_item name="item_1"/>
-  <xacro:grippable_item name="item_2"/>
-  <xacro:grippable_item name="item_3"/>
+  <xacro:grippable_item name="parcel_1"/>
+  <xacro:grippable_item name="parcel_2"/>
+  <xacro:grippable_item name="parcel_3"/>
+  <xacro:grippable_item name="parcel_4"/>
+  <xacro:grippable_item name="parcel_5"/>
+  <xacro:grippable_item name="parcel_6"/>
 
   <!-- High wheel friction so the drive wheels grip instead of skidding: wheel slip is
        what corrupts the odometry that SLAM and AMCL depend on. -->

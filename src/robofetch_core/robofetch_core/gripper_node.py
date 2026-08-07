@@ -44,7 +44,8 @@ class GripperNode(Node):
         # forget stays welded to the gripper from wherever it sits - metres away - and
         # anchors the robot: the wheels turn, odometry advances, but the robot cannot
         # actually move. Releasing all of them once at start-up is what frees it.
-        self.declare_parameter("items", ["item_1", "item_2", "item_3"])
+        self.declare_parameter(
+            "items", [f"parcel_{i}" for i in range(1, 7)])
         # Gazebo world name, needed to call its set_pose service.
         self.declare_parameter("world", "warehouse")
         # Where a grabbed parcel is placed relative to the robot centre, in metres

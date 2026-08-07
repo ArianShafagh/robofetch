@@ -3,61 +3,70 @@
 Complete state of the project: what exists, how to run it, every problem hit and how it was
 solved, and what remains. Written so a fresh session (or a new person) can pick it up cold.
 
-**Last updated:** 2026-08-05 · **Status:** M1–M9 complete · **63 tests + 10 acceptance checks passing**
+**Last updated:** 2026-08-07 · **Status:** v2 implemented · **65 tests + 15 acceptance checks passing**
 
-> **2026-08-05 — all nine milestones complete.** Full acceptance suite passes **10/10** against the
-> live simulator, every physical claim confirmed against Gazebo ground truth
-> (`./robofetch_venv/bin/python scripts/acceptance.py`). 63 pytest tests pass.
+> **2026-08-07 — RoboFetch v2 is implemented and verified.** Full acceptance suite passes
+> **15/15** against the live simulator, every physical claim confirmed against Gazebo ground
+> truth. 65 pytest tests pass.
 >
-> The two long-standing blockers are **fixed**: `shelf_1`/`shelf_2` are now flush to the north wall,
-> removing the 0.90 m corridor that trapped the robot (§5.5); and the gripper now verifies grabs
-> against the DetachableJoint's own `attached`/`detached` state instead of guessing from proximity
-> (§5.10). Remaining known limitations are in §7 — chiefly ~0.6–0.8 m delivery accuracy and the fact
-> that cancelling does not stop a robot that has already started.
+> v2 replaced the v1 feature set after the professor approved `docs/proposal.md`:
+> - Orders are placed by **product ID** against a real catalogue; coordinates live in the
+>   database, not in code.
+> - The robot has a **condition model** — battery, temperature, wear — logged to a per-run CSV.
+> - Every order goes through **admission control**: cost estimate, a scikit-learn classifier,
+>   and policy gates that can overrule it. The robot **refuses** work it cannot do.
+> - The web app is **server-rendered HTML with no JavaScript**; the live map is gone.
+> - The nearest-neighbour scheduler and the retry FSM were **removed** (FIFO by order time; a
+>   plain 3-attempt grab, then return to station).
+>
+> Read `docs/proposal.md` first - it is the approved specification this code implements.
 
 ---
 
 ## 1. What this is
 
-A simulated **pick-and-delivery robot**. A client orders "bring `item_1` from `shelf_1` to
-`delivery_1`" through a web API; a differential-drive robot in Gazebo autonomously navigates a
-warehouse, picks the parcel up, carries it to the delivery station, and drops it.
+A simulated **pick-and-delivery robot**. A client orders a product by catalogue ID through a web
+application; the system predicts whether the robot can do the job in its current condition and
+either accepts or refuses it. If accepted, a differential-drive robot in Gazebo navigates the
+warehouse, picks the parcel up, carries it to a delivery bay, drops it, and goes home to charge.
 
-Built from a university software-engineering proposal (`RoboFetch_Proposal.pdf`), milestone by
-milestone, as a **learning project** — the owner wants to understand every part, not just have it
-work.
+Built from a university software-engineering proposal as a **learning project** — the owner wants
+to understand every part, not just have it work. The approved v2 specification is
+`docs/proposal.md`; read that first.
 
-### Three-tier architecture (as the proposal specifies)
+### Architecture
 
 ```
-   Client (browser / curl)
-        │  REST + WebSocket
-   ┌────▼─────────────────────────┐
-   │  FastAPI + SQLite            │   robofetch_bridge
-   │  (web tier)                  │
-   └────┬─────────────────────────┘
+   Browser (server-rendered HTML, no JavaScript)
+        │  form posts
+   ┌────▼──────────────────────────┐        ┌──────────────────────┐
+   │  FastAPI + SQLite             │───────▶│  robofetch_ai :8001  │
+   │  + ADMISSION WORKFLOW         │◀───────│  feasibility model   │
+   └────┬──────────────────────────┘        └──────────────────────┘
         │  ROS 2 topics (JSON on std_msgs/String)
-   ┌────▼─────────────────────────┐
-   │  Task Manager, Scheduler,    │   robofetch_core
-   │  Retry FSM, Gripper Node     │   ← OUR custom logic
-   └────┬─────────────────────────┘
+   ┌────▼──────────────────────────┐
+   │  Task manager (FIFO)          │   robofetch_core
+   │  Robot condition model        │   ← OUR custom logic
+   │  Gripper node                 │
+   └────┬──────────────────────────┘
         │  actions / services
-   ┌────▼─────────────────────────┐
-   │  Nav2  +  Gazebo Harmonic    │   third-party, used as-is
-   └──────────────────────────────┘
+   ┌────▼──────────────────────────┐
+   │  Nav2  +  Gazebo Harmonic     │   third-party, used as-is
+   └───────────────────────────────┘
 ```
 
 ### Proposal mapping (important for the report)
 
 | Proposal section | What satisfies it |
 |---|---|
-| §2.1 Data/CRUD | `robofetch_bridge/db.py` — orders, locations, delivery_history, robot_state |
-| §2.2 Third-party | Nav2 (AMCL, planner, controller, behaviour tree), Gazebo, DetachableJoint |
-| §2.3 **Complex #1** | Nearest-neighbour scheduler — `robofetch_core/scheduler.py` |
-| §2.3 **Complex #2** | Grab-verification & retry FSM — `robofetch_core/retry.py` |
-| FR4 (retry ≤3 then fail) | `retry.py` + `task_manager._grab_with_retries` — verified |
-| NFR2 (<100 ms for 20 orders) | measured **0.0136 ms** — test asserts it |
-| UC1/UC2/UC5/UC6 | REST endpoints in `app.py` |
+| §3.1 Data/CRUD | `robofetch_bridge/db.py` — products, shelves, pick points, delivery points, station, orders, history, telemetry |
+| §3.2 Third-party | Nav2, Gazebo, FastAPI, SQLite, scikit-learn, pandas, joblib |
+| §3.3 **Complex C1** | Robot condition model + duty cycle — `robofetch_core/robot_model.py`, `robot_state_node.py` |
+| §3.3 **Complex C2** | Order admission + cost preview — `robofetch_bridge/admission.py` |
+| §3.3 **Complex C3** | Physical delivery verification — `task_manager.execute_order` step 5 |
+| FR8 (3 grab attempts) | `task_manager.execute_order` — acceptance-verified |
+| NFR1 (<2 s preview) | measured **368 ms** — acceptance check |
+| NFR2 (AI-down fallback) | `predictor.py` returns None → policy decides alone — unit-tested |
 
 ---
 
@@ -89,36 +98,43 @@ work.
 | `robofetch_gazebo` | `warehouse.sdf` world, `bridge.yaml` (gz↔ROS), sim launch |
 | `robofetch_nav` | `nav2_params.yaml`, generated map, navigation launch |
 | `robofetch_interfaces` | `Grab.srv` |
-| `robofetch_core` | **our logic**: `task_manager.py`, `scheduler.py`, `retry.py`, `order.py`, `gripper_node.py` |
-| `robofetch_bridge` | **web tier**: `app.py` (FastAPI), `db.py` (SQLite), `ros_link.py` (rclpy thread) |
+| `robofetch_core` | **our logic**: `robot_model.py`, `robot_state_node.py`, `task_manager.py`, `gripper_node.py` |
+| `robofetch_bridge` | **web tier**: `app.py`, `db.py`, `admission.py`, `predictor.py`, `ros_link.py` |
+| `robofetch_ai` | feasibility classifier service on port 8001 |
 | `robofetch_bringup` | `delivery.launch.py` — starts everything |
-| `robofetch_web` | **the dashboard**: `web/index.html`, `web/style.css`, `web/app.js` (M8) |
+| `robofetch_web` | Jinja2 templates + one stylesheet (no JavaScript) |
+| `tools/ml` | **disposable** synthetic data generator + trainer (outside the build) |
 
 ### The world (`warehouse.sdf`) — 8 × 6 m room
 
 ```
- ┌──────────────────────────────────────┐  y=+3
- │ ▓▓▓ shelf_1 ▓▓▓      ▓▓ shelf_2 ▓▓   │
- │     ▪item_1              ▪item_2     │
- │                                 ▓▓▓▓ │
- │                                 ▓ s3 ▓ ← flush to east wall
- │                            ▪item_3 ▓ │
- │ ┌──────────┐                    ▓▓▓▓ │
- │ │ delivery │ ← robot starts (-2.6,-2.0)
- │ └──────────┘                         │
- └──────────────────────────────────────┘  y=-3
- x=-4                                  x=+4
+ ┌────────────────────────────────────────┐  y=+3
+ │▓▓▓▓ shelf_1 ▓▓▓▓      ▓▓▓ shelf_2 ▓▓▓  │  ← both flush to the north wall
+ │   ▪1001   ▪1002        ▪2001  ▪2002    │
+ │                                   ▓▓▓▓ │
+ │                             ▪3002 ▓ s3 ▓  ← flush to the east wall
+ │                             ▪3001 ▓    ▓
+ │  ◎delivery_1     ⌂station      ◎delivery_2
+ └────────────────────────────────────────┘  y=-3
+ x=-4                                    x=+4
 ```
 
-**Waypoints** (map frame == Gazebo world frame, so these are literal world coordinates):
+Map frame == Gazebo world frame, so these are literal world coordinates. **All coordinates now
+live in the database**, not in code: `shelves`, `pick_points`, `delivery_points`, `station`.
 
-| Name | Coordinates | Note |
-|---|---|---|
-| `shelf_1` / `shelf_2` / `shelf_3` | (−2.5, 0.95) / (1.5, 0.95) / (2.75, −1.0) | robot parks here; parcel sits ~0.4 m ahead |
-| `delivery_1` / `delivery_2` / `delivery_3` | (−3.1, −2.2) / (−2.1, −2.2) / (−2.6, −1.5) | spread apart on purpose (see §5.5) |
+| Name | Coordinates | | Name | Coordinates |
+|---|---|---|---|---|
+| `pick_1a` / `pick_1b` | (−3.0, 0.95) / (−2.0, 0.95) | | `delivery_1` | (−3.0, −2.2) |
+| `pick_2a` / `pick_2b` | (1.05, 0.95) / (1.95, 0.95) | | `delivery_2` | (2.6, −2.2) |
+| `pick_3a` / `pick_3b` | (2.75, −1.5) / (2.75, −0.5) | | `station_1` | (0.0, −2.2) |
 
-`item_N` lives on `shelf_N`. Parcels are 0.09 m cubes — **deliberately below the 0.13 m lidar**, so
-a carried parcel is never mistaken for an obstacle.
+Six parcels, two per shelf, ~1 m apart. Parcels are 0.09 m cubes — **deliberately below the
+0.13 m lidar**, so a carried one is never mistaken for an obstacle. They are carried on the floor,
+**not lifted**: raising one into the laser plane would make the robot see an obstacle directly in
+front of itself and refuse to move, so the spacing is what stops them colliding.
+
+The two delivery bays are in **opposite corners** and the station is somewhere else again, so the
+robot never parks on a parcel it has already delivered.
 
 ---
 
@@ -145,57 +161,56 @@ source install/setup.bash               # our packages — BOTH sources needed, 
 ros2 launch robofetch_bringup delivery.launch.py
 ```
 
-### Order a delivery (second terminal)
+### Order something (second terminal)
+
+Open **http://localhost:8000** in the Windows browser — that bypasses WSLg entirely, so it works
+even when Gazebo's own window does not. Pick a product and a destination, read the cost and the
+verdict, confirm. Pages are server-rendered; there is no JavaScript.
+
+From a terminal:
 
 ```bash
-./scripts/order.sh item_1 shelf_1 delivery_1        # defaults to exactly this
+./scripts/order.sh SKU-3001 delivery_2
 ```
 
-Prefer this over a bare `curl`. It checks the three things that make an order silently vanish
-(§5.8) *before* submitting, prints every state change as it happens, and then compares the parcel's
-**real Gazebo pose** against the drop-off — so a `completed` status is never taken on trust.
+Prefer this over a bare `curl`. It checks the failure modes in §5.9 *before* submitting, shows the
+admission verdict and its reasoning, prints every state change, and then compares the parcel's
+**real Gazebo pose** against the bay — so a `completed` status is never taken on trust.
+`./scripts/order.sh --list` prints the catalogue.
 
-The raw request still works, but tells you nothing after the first reply:
+The REST API is still there for scripts: `POST /api/preview`, `POST /api/orders`,
+`GET /api/orders/{id}`, `GET /api/robot`, `GET /api/analytics`, `GET /health`.
 
-```bash
-curl -s -X POST localhost:8000/orders -H 'Content-Type: application/json' \
-  -d '{"item":"item_1","point_a":"shelf_1","point_b":"delivery_1"}'
-```
-
-### The dashboard (M8)
-
-Open **http://localhost:8000** in the *Windows* browser — it bypasses WSLg entirely, so it works even
-when Gazebo's own window does not. `/app/` serves the same page.
-
-Order form (parcel + waypoint dropdowns, auto-paired so `item_N` defaults to `shelf_N`/`delivery_N`),
-a live order table with cancel buttons, aggregate statistics (UC6), and a warehouse map. The map
-draws the walls, shelves and station from `warehouse.sdf` geometry, waypoints from the `locations`
-table, the robot from `/amcl_pose`, and **the parcels from their real Gazebo poses** — so a parcel
-that never moved is visibly still on its shelf no matter what the order status claims (§5.4).
-
-Everything is fed by the `/telemetry` WebSocket, which reconnects on its own if you restart the sim.
-
-Interactive API docs: **http://localhost:8000/docs**
+---
 
 ### Other scripts
 
 | Script | Purpose |
 |---|---|
-| `./scripts/order.sh [item] [from] [to]` | **The way to submit an order** — see below |
+| `./scripts/order.sh [SKU] [delivery]` | **The way to submit an order** — see above |
 | `./scripts/stop.sh` | **Run this whenever a launch didn't exit cleanly** — see §5.1 |
 | `./scripts/goto.sh shelf1\|shelf2\|shelf3\|delivery` | manual navigation goal |
 | `./scripts/gripper.sh grab\|release` | manual grab/release |
 | `./scripts/teleop.sh` | keyboard driving |
 | `./scripts/set_pose.sh` | re-localize the robot |
-| `./scripts/generate_map.py` | regenerate the map **after any world change** |
+| `./scripts/generate_map.py` | regenerate the map **after any world geometry change** |
+| `./scripts/acceptance.py` | the full acceptance suite (15 checks) |
+| `tools/ml/generate.py`, `tools/ml/train.py` | **disposable** — rebuild the classifier |
 
 ### Tests
 
 ```bash
 cd ~/robofetch_ws && source install/setup.bash
-python3 -m pytest src/robofetch_core/test/ src/robofetch_bridge/test/ -v
+./robofetch_venv/bin/python -m pytest src/robofetch_core/test/ src/robofetch_bridge/test/ -v
 ```
-**50 passing:** 15 scheduler + 19 retry + 16 database.
+**65 passing:** condition model, admission policy, database, and HTTP↔SQLite↔ROS integration.
+
+Acceptance, against the live simulator (needs a freshly launched stack):
+
+```bash
+./robofetch_venv/bin/python scripts/acceptance.py          # --quick skips the slow physical ones
+```
+**15/15 passing** as of 2026-08-07.
 
 ### ⚠️ Verify with Gazebo, never with logs alone
 
@@ -438,6 +453,27 @@ Two things to know if you touch this:
 
 `on_release` verifies the same way: a detach that did not take hold would otherwise leave the parcel
 welded to the gripper and dragged into the next delivery.
+
+### 5.11 v2 traps worth knowing
+
+**`Jinja2Templates.TemplateResponse` changed signature.** Starlette >= 0.29 wants
+`TemplateResponse(request, name, context)`. Passing the old `(name, context)` form makes it read
+the template NAME as the request and the context dict as the name, and it dies deep inside the
+template cache with `TypeError: unhashable type: 'dict'` — every page 500s while the stylesheet
+still serves fine, which points suspicion in entirely the wrong direction.
+
+**`python-multipart` is required** for the HTML form posts (`Form(...)`). Without it FastAPI
+raises at request time, not at import, so the app starts happily and then fails on first use.
+
+**The v1 database is not forward-compatible.** `CREATE TABLE IF NOT EXISTS` silently leaves an old
+`orders` table in place with the wrong columns. Delete `robofetch.db` when moving to v2 — it is
+runtime state and is recreated with the seeded catalogue on first run.
+
+**Constants were retuned so the demo has something to refuse.** `CAPACITY_WH` is 40 (about 4–6
+deliveries per charge) and `K_HEAT` is 1.2, which puts the lightest product's steady-state
+temperature around 65 C and the heaviest around 74 C — straddling the 70 C limit. That is what
+makes payload weight actually decide an outcome. A bigger battery or gentler heating is more
+realistic but leaves the accept/refuse logic with nothing to bite on.
 
 ### 5.9 "I submitted an order and nothing happened"
 

@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>robofetch_ai</name>
+  <version>0.1.0</version>
+  <description>Order feasibility prediction service. Loads the classifier trained by
+    tools/ml/train.py and serves it over HTTP so the web tier can consult it during order
+    admission. Deliberately a separate process: the main API must keep working when this
+    service is down.</description>
+  <maintainer email="shafagh.arian2003@gmail.com">robojazzy</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>python3-pytest</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

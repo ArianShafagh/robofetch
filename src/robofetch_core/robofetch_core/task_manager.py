@@ -1,18 +1,23 @@
-"""Task Manager - executes a delivery order end to end.
+"""Task Manager - executes a delivery order end to end (proposal UC4, FR6-FR9, FR11).
 
-Chains the full pick-and-place sequence described in the proposal (UC4):
+    navigate to the pick point  ->  grab  ->  navigate to the delivery bay  ->  release
 
-    navigate to A  ->  grab  ->  navigate to B  ->  release
+Navigation is delegated to Nav2's NavigateToPose action (third-party, used as-is) and grabbing
+to the gripper node's services. The orchestration, state tracking and error handling are ours.
 
-Navigation is delegated to Nav2's NavigateToPose action (a third-party service, used
-as-is) and grabbing to the gripper node's services. The orchestration, state tracking
-and error handling are ours.
+Three deliberate simplifications compared with v1:
 
-Orders are served using the nearest-neighbour scheduler (M5): whenever the robot is
-idle, the pending order whose pickup point is closest is chosen next. The grab-retry
-state machine (M6) plugs into `execute_order` without changing this structure.
+  * **Orders are served FIFO.** v1 picked the geographically nearest pending pickup. Customers
+    care about being served in the order they asked, not about the robot's convenience, so the
+    web tier hands orders over one at a time in `created_at` order and this node simply runs
+    what it is given.
+  * **A failed grab is retried 3 times, then the order fails** and the robot drives home. v1
+    had a state machine with exponential backoff; it was more machinery than the behaviour
+    justified.
+  * **After 2 minutes idle the robot returns to its station** and reports `charging`, which is
+    what lets the condition model recover battery and temperature.
 
-The sequence runs on a worker thread and blocks on futures, while a MultiThreadedExecutor
+The sequence runs on a worker thread and blocks on futures while a MultiThreadedExecutor
 services callbacks - much easier to follow than a callback-chained state machine.
 """
 import json
@@ -21,20 +26,17 @@ import threading
 import time
 
 import rclpy
-from geometry_msgs.msg import Pose, PoseWithCovarianceStamped, PoseStamped
+from geometry_msgs.msg import Pose, PoseWithCovarianceStamped
 from nav2_msgs.action import NavigateToPose
-from std_msgs.msg import String
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from std_msgs.msg import String
 
 from robofetch_interfaces.srv import Grab
-from robofetch_core.order import Order, OrderState
-from robofetch_core.scheduler import distance, pending_orders, select_next_order
-from robofetch_core.retry import (DEFAULT_MAX_ATTEMPTS, GrabDecision,
-                                  backoff_seconds, decide_after_grab,
-                                  describe, next_state)
+
+MAX_GRAB_ATTEMPTS = 3
 
 
 def yaw_to_quat(yaw):
@@ -42,67 +44,29 @@ def yaw_to_quat(yaw):
     return math.sin(yaw / 2.0), math.cos(yaw / 2.0)
 
 
+def distance(a, b):
+    return math.hypot(a[0] - b[0], a[1] - b[1])
+
+
 class TaskManager(Node):
     def __init__(self):
         super().__init__("task_manager")
 
-        # Orders to run, each encoded "item,pickup_x,pickup_y,dropoff_x,dropoff_y".
-        # Coordinates are map coordinates, which - because the map is generated from the
-        # world geometry - are also the Gazebo world coordinates of the markers.
-        #
-        # The defaults are deliberately submitted in a NON-optimal sequence so the
-        # nearest-neighbour scheduler visibly reorders them (M5 acceptance test).
-        # M7 replaces this parameter with orders arriving from the web API.
-        # Warehouse layout: three SHELVES are the pickup points, one DELIVERY STATION
-        # (south-west) is where parcels go. Each order gets its own spot inside the
-        # station: the parcels are shorter than the lidar so Nav2 cannot see them, and
-        # stacking every delivery on one point makes the robot drive into a parcel it
-        # already dropped.
-        #
-        #   shelf_1 (north-west)  item_1   pickup (-2.5,  0.95)
-        #   shelf_2 (north-east)  item_2   pickup ( 1.5,  0.95)
-        #   shelf_3 (east)        item_3   pickup ( 2.75, -1.0)
-        #
-        # Submitted in a deliberately NON-optimal order so the nearest-neighbour
-        # scheduler visibly reorders them. M7 replaces this with orders from the web API.
-        # A SEMICOLON-SEPARATED string, not a list: ROS 2 cannot infer the type of an
-        # EMPTY array parameter, and launching with no pre-queued orders (the normal case
-        # once the web API is running) made the whole launch abort with
-        # "Expected a non-empty sequence ... inconsistent input". A plain string is
-        # always well-typed, empty or not.
-        #   "item,pickup_x,pickup_y,dropoff_x,dropoff_y; item,..."
-        self.declare_parameter("orders", "")
-        # The robot spawns on the delivery station; publishing that once lets AMCL localize without
-        # a human clicking "2D Pose Estimate" in RViz.
+        # The robot spawns on its station, which is also where it returns when idle.
         self.declare_parameter("publish_initial_pose", True)
-        self.declare_parameter("initial_pose", [-2.6, -2.0, 0.0])   # x, y, yaw
-        # How close the parcel must end up to count as delivered. 0.45 m is achievable
-        # now that (a) the gripper snaps each parcel to a known carry position instead of
-        # welding it wherever it lay, and (b) the robot parks so the PARCEL, not its own
-        # centre, lands on the target. Error budget: 0.20 m parking + ~0.10 m from
-        # heading error + settling, with margin.
+        self.declare_parameter("initial_pose", [0.0, -2.2, 0.0])     # x, y, yaw
+        self.declare_parameter("station", [0.0, -2.2])
+        # How close the parcel must end up to count as delivered. The dominant error is that
+        # DetachableJoint welds the parcel wherever it lies, often ~0.5 m off-centre, and
+        # releases it at that same offset.
         self.declare_parameter("delivery_tolerance", 1.1)
-        # Distance from the robot centre to the carried parcel. The robot is aimed so the
-        # PARCEL lands on the drop-off, not the robot centre - otherwise every delivery is
-        # off by this whole offset. Must match the gripper node's carry_offset.
-        self.declare_parameter("carry_offset", 0.55)
-        # Heading the robot faces when placing a parcel (radians). pi = facing west,
-        # which keeps the parking spot on the open side of the delivery station.
-        self.declare_parameter("approach_yaw", 3.14159)
-        # FR4: retry a failed grab up to this many times before failing the order.
-        self.declare_parameter("max_grab_attempts", DEFAULT_MAX_ATTEMPTS)
-        # True when the web API supplies orders: the task manager then keeps running and
-        # waiting instead of exiting once the initial queue is empty.
-        self.declare_parameter("run_forever", False)
+        # Seconds with an empty queue before the robot drives home (FR11).
+        self.declare_parameter("idle_return_seconds", 120.0)
 
-        self.orders = self._parse_orders(self.get_parameter("orders").value)
+        self.station = tuple(float(v) for v in self.get_parameter("station").value)
         self.delivery_tolerance = self.get_parameter("delivery_tolerance").value
-        self.carry_offset = self.get_parameter("carry_offset").value
-        self.approach_yaw = self.get_parameter("approach_yaw").value
-        self.max_grab_attempts = self.get_parameter("max_grab_attempts").value
-        self.run_forever = self.get_parameter("run_forever").value
-        # Robot position the scheduler measures from: seeded with the declared start
-        # pose, then kept up to date from AMCL as the robot moves.
+        self.idle_return_seconds = self.get_parameter("idle_return_seconds").value
+
         start = self.get_parameter("initial_pose").value
         self.robot_position = (float(start[0]), float(start[1]))
 
@@ -116,110 +80,104 @@ class TaskManager(Node):
         self.initial_pose_pub = self.create_publisher(
             PoseWithCovarianceStamped, "/initialpose", 10)
 
-        # AMCL only publishes once it is active and has a pose estimate, which makes it
-        # a reliable "the navigation stack is really ready" signal. The action server
-        # appearing is not enough: Nav2's lifecycle nodes reject goals until activated.
+        # AMCL only publishes once it is active and has a pose estimate, which makes it a
+        # reliable "the navigation stack is really ready" signal. The action server appearing
+        # is not enough: Nav2's lifecycle nodes reject goals until activated.
         self._amcl_ready = threading.Event()
         self.create_subscription(PoseWithCovarianceStamped, "/amcl_pose",
                                  self._on_amcl_pose, 10)
 
-        # Item world poses, used to CONFIRM a delivery physically happened. Reporting a
-        # delivery because the commands returned success is not enough: a grab that
-        # silently failed leaves the parcel behind while every step still reports OK.
-        self.item_poses = {}
-        for order in self.orders:
-            self.create_subscription(
-                Pose, f"/model/{order.item}/pose",
-                lambda msg, n=order.item: self.item_poses.__setitem__(
-                    n, (msg.position.x, msg.position.y)),
-                10)
+        # Parcel world poses, used to CONFIRM a delivery physically happened (C3). Reporting
+        # success because the commands returned OK is not enough: a grab that silently failed
+        # leaves the parcel behind while every step still reports success.
+        self.parcel_poses = {}
 
-        # --- link to the web bridge (M7) ---
-        # Orders arrive as JSON on /orders/new and every state change is published on
-        # /orders/status. Topics rather than a service because status is a stream the
-        # bridge and the dashboard both follow, and a dropped order must not block the
-        # HTTP request that created it.
+        # --- link to the web bridge ---
         self.status_pub = self.create_publisher(String, "/orders/status", 10)
+        self.activity_pub = self.create_publisher(String, "/robot/activity", 10)
         self.create_subscription(String, "/orders/new", self._on_new_order, 10)
-        self._orders_lock = threading.Lock()
-        self._next_local_id = len(self.orders) + 1
+
+        self._queue = []                     # FIFO, oldest first
+        self._queue_lock = threading.Lock()
+        self._seen_ids = set()
 
         self._worker = threading.Thread(target=self._run, daemon=True)
         self._worker.start()
 
+    # ------------------------------------------------------------------ incoming
     def _on_new_order(self, msg):
-        """Queue an order submitted through the web API.
+        """Queue an order sent by the web tier.
 
-        Payload: {"id", "item", "pickup": [x, y], "dropoff": [x, y]}
-        The bridge resolves waypoint NAMES to coordinates, so the robot side only ever
-        deals in numbers.
+        Payload: {"id", "product_id", "model", "weight_kg", "pickup": [x, y],
+                  "dropoff": [x, y]}
+        The bridge resolves the product to coordinates, so this side stays numeric.
         """
         try:
-            data = json.loads(msg.data)
-            order = Order(order_id=int(data["id"]), item=data["item"],
-                          pickup=tuple(data["pickup"]), dropoff=tuple(data["dropoff"]))
+            order = json.loads(msg.data)
+            order["pickup"] = tuple(order["pickup"])
+            order["dropoff"] = tuple(order["dropoff"])
+            order["id"] = int(order["id"])
         except (ValueError, KeyError, TypeError) as exc:
             self.get_logger().error(f"Ignoring malformed order '{msg.data}': {exc}")
             return
 
-        with self._orders_lock:
-            if any(o.order_id == order.order_id for o in self.orders):
-                return                      # already queued; ignore duplicates
-            self.orders.append(order)
-            # Watch this item's pose so the delivery can be physically verified.
-            if order.item not in self.item_poses:
-                self.create_subscription(
-                    Pose, f"/model/{order.item}/pose",
-                    lambda m, n=order.item: self.item_poses.__setitem__(
-                        n, (m.position.x, m.position.y)),
-                    10)
+        with self._queue_lock:
+            if order["id"] in self._seen_ids:
+                return                                   # duplicate; ignore
+            self._seen_ids.add(order["id"])
+            self._queue.append(order)                    # FIFO: append, pop from the front
+
+        self._watch_parcel(order["model"])
         self.get_logger().info(
-            f"Accepted order {order.order_id}: {order.item} "
-            f"{order.pickup} -> {order.dropoff}")
-        self._publish_status(order)
+            f"Accepted order {order['id']}: {order['product_id']} ({order['model']}, "
+            f"{order['weight_kg']} kg) {order['pickup']} -> {order['dropoff']}")
+        self._publish_status(order["id"], "pending", 0, "queued")
 
-    def _publish_status(self, order):
-        """Tell the bridge (and through it the client) about an order's state."""
-        self.status_pub.publish(String(data=json.dumps({
-            "id": order.order_id,
-            "item": order.item,
-            "status": order.state.value,
-            "retries": order.attempts,
-            "detail": order.detail,
-        })))
+    def _watch_parcel(self, model):
+        if model in self.parcel_poses:
+            return
+        self.parcel_poses[model] = None
+        self.create_subscription(
+            Pose, f"/model/{model}/pose",
+            lambda msg, n=model: self.parcel_poses.__setitem__(
+                n, (msg.position.x, msg.position.y)),
+            10)
 
-    # ------------------------------------------------------------------ helpers
     def _on_amcl_pose(self, msg):
-        """Track where the robot is; the scheduler measures distances from here."""
         self._amcl_ready.set()
         p = msg.pose.pose.position
         self.robot_position = (p.x, p.y)
 
-    def _parse_orders(self, spec_string):
-        """Turn a "item,px,py,dx,dy; item,..." string into Order objects."""
-        specs = [s for s in (part.strip() for part in spec_string.split(";")) if s]
-        orders = []
-        for index, spec in enumerate(specs, start=1):
-            try:
-                item, px, py, dx, dy = [s.strip() for s in spec.split(",")]
-                orders.append(Order(order_id=index, item=item,
-                                    pickup=(float(px), float(py)),
-                                    dropoff=(float(dx), float(dy))))
-            except ValueError:
-                self.get_logger().error(
-                    f"Ignoring malformed order '{spec}'; "
-                    "expected 'item,pickup_x,pickup_y,dropoff_x,dropoff_y'")
-        return orders
+    # ------------------------------------------------------------------ outgoing
+    def _publish_status(self, order_id, status, attempts, detail=""):
+        self.status_pub.publish(String(data=json.dumps({
+            "id": order_id, "status": status, "attempts": attempts, "detail": detail,
+        })))
+
+    def _publish_activity(self, activity, payload_kg=0.0, order_id=None):
+        """Tell the condition monitor what we are doing and what we are carrying."""
+        self.activity_pub.publish(String(data=json.dumps({
+            "activity": activity, "payload_kg": payload_kg, "order_id": order_id,
+        })))
+
+    # ------------------------------------------------------------------- helpers
+    def _sleep(self, seconds):
+        threading.Event().wait(seconds)
+
+    def _wait(self, future, timeout=180.0):
+        end = threading.Event()
+        future.add_done_callback(lambda _f: end.set())
+        if not end.wait(timeout):
+            self.get_logger().error("Timed out waiting for a result.")
+            return None
+        return future.result()
 
     def _publish_initial_pose(self, timeout=90.0):
         """Keep telling AMCL where the robot is until it confirms by publishing a pose.
 
-        This has to be a handshake, not a fire-and-forget. Early in start-up AMCL's TF
-        buffer often has no odom->base_footprint yet, so it logs "Failed to transform
-        initial pose in time" and DISCARDS the message. If we stop after a fixed number
-        of attempts and they all land in that window, AMCL never localizes and just
-        repeats "AMCL cannot publish a pose ... Please set the initial pose", while the
-        robot sits still forever. Retrying until /amcl_pose arrives removes the race.
+        This has to be a handshake, not fire-and-forget: early in start-up AMCL's TF buffer
+        often has no odom->base_footprint yet, so it discards the message. Retrying until
+        /amcl_pose arrives removes the race.
         """
         x, y, yaw = self.get_parameter("initial_pose").value
         z, w = yaw_to_quat(yaw)
@@ -229,7 +187,6 @@ class TaskManager(Node):
         msg.pose.pose.position.y = float(y)
         msg.pose.pose.orientation.z = z
         msg.pose.pose.orientation.w = w
-        # A little covariance so AMCL treats it as a hint, not gospel.
         msg.pose.covariance[0] = 0.25
         msg.pose.covariance[7] = 0.25
         msg.pose.covariance[35] = 0.07
@@ -253,10 +210,6 @@ class TaskManager(Node):
             f"AMCL never confirmed the initial pose after {timeout:.0f} s.")
         return False
 
-    def _sleep(self, seconds):
-        """Sleep without blocking the executor (we are on a worker thread)."""
-        threading.Event().wait(seconds)
-
     def navigate_to(self, x, y, yaw=0.0):
         """Send a Nav2 goal and block until it finishes. Returns True on success."""
         goal = NavigateToPose.Goal()
@@ -269,8 +222,8 @@ class TaskManager(Node):
 
         self.get_logger().info(f"Navigating to ({x:.2f}, {y:.2f}) ...")
 
-        # Nav2 can still be activating when the action server first appears, and an
-        # inactive server rejects goals outright. Retry a few times before giving up.
+        # Nav2 can still be activating when the action server first appears, and an inactive
+        # server rejects goals outright. Retry a few times before giving up.
         handle = None
         for attempt in range(1, 6):
             handle = self._wait(self.nav_client.send_goal_async(goal), timeout=30.0)
@@ -286,212 +239,161 @@ class TaskManager(Node):
         result = self._wait(handle.get_result_async())
         if result is None:
             return False
-        # status 4 == SUCCEEDED in action_msgs/GoalStatus
-        ok = result.status == 4
-        self.get_logger().info(f"Navigation {'succeeded' if ok else 'failed'} "
-                               f"(status {result.status}).")
+        ok = result.status == 4          # 4 == SUCCEEDED in action_msgs/GoalStatus
+        self.get_logger().info(
+            f"Navigation {'succeeded' if ok else 'failed'} (status {result.status}).")
         return ok
 
     def call_gripper(self, client, item, release=False):
-        """Call grab or release for `item`; returns the response (or None on failure)."""
         request = Grab.Request()
         request.item = item
         request.release = release
         return self._wait(client.call_async(request))
 
-    def _wait(self, future, timeout=180.0):
-        """Block the worker thread until a future completes."""
-        end = threading.Event()
-        future.add_done_callback(lambda _f: end.set())
-        if not end.wait(timeout):
-            self.get_logger().error("Timed out waiting for a result.")
-            return None
-        return future.result()
+    def return_to_station(self):
+        """Drive home and report `charging`, which lets the condition model recover."""
+        self._publish_activity("returning")
+        if self.navigate_to(*self.station):
+            self._publish_activity("charging")
+            self.get_logger().info("At the station, charging.")
+            return True
+        self.get_logger().error("Could not reach the station.")
+        self._publish_activity("idle")
+        return False
 
     # ------------------------------------------------------------- the sequence
-    def execute_order(self, order: Order) -> bool:
-        """Run one order: navigate -> grab -> navigate -> release."""
-        # 1) Drive to the pickup point.
-        self._set_state(order, OrderState.NAVIGATING, f"heading to pickup {order.pickup}")
-        self.get_logger().info(f"[order {order.order_id}] {order.detail}")
-        if not self.navigate_to(*order.pickup):
-            self._set_state(order, OrderState.FAILED, "could not reach the pickup point")
+    def execute_order(self, order):
+        """Run one order: navigate -> grab (up to 3 tries) -> navigate -> release -> verify."""
+        order_id, model, payload = order["id"], order["model"], order.get("weight_kg", 0.0)
+
+        # 1) Drive to the pick point.
+        self._publish_activity("working", 0.0, order_id)
+        self._publish_status(order_id, "navigating", 0, f"heading to {order['pickup']}")
+        if not self.navigate_to(*order["pickup"]):
+            self._publish_status(order_id, "failed", 0, "could not reach the pick point")
+            self.return_to_station()
             return False
 
-        # 2) Grab the item, retrying on failure (Complex Functionality 2 / FR4).
-        if not self._grab_with_retries(order):
+        # 2) Grab it, up to MAX_GRAB_ATTEMPTS times (FR8). No backoff state machine: just
+        #    re-approach and try again, because parking too far away is the usual cause and
+        #    re-approaching is what actually changes it.
+        grabbed = False
+        for attempt in range(1, MAX_GRAB_ATTEMPTS + 1):
+            self._publish_status(order_id, "grabbing", attempt,
+                                 f"attempt {attempt} of {MAX_GRAB_ATTEMPTS}")
+            self.get_logger().info(f"[order {order_id}] grab attempt {attempt}")
+            response = self.call_gripper(self.grab_client, model)
+            if response is not None and response.success:
+                grabbed = True
+                self.get_logger().info(f"[order {order_id}] {response.message}")
+                break
+            if response is not None:
+                self.get_logger().warn(f"[order {order_id}] {response.message}")
+            if attempt < MAX_GRAB_ATTEMPTS:
+                self._sleep(2.0)
+                self.navigate_to(*order["pickup"])       # re-approach before trying again
+
+        if not grabbed:
+            self._publish_status(
+                order_id, "failed", MAX_GRAB_ATTEMPTS,
+                f"could not grab {model} in {MAX_GRAB_ATTEMPTS} attempts; returning to station")
+            self.get_logger().error(f"[order {order_id}] grab failed {MAX_GRAB_ATTEMPTS} times")
+            self.return_to_station()
             return False
 
-        # 3) Carry it to the drop-off point.
-        self._set_state(order, OrderState.DELIVERING, f"carrying to {order.dropoff}")
-        self.get_logger().info(f"[order {order.order_id}] {order.detail}")
-        if not self.navigate_to(*order.dropoff):
-            self._set_state(order, OrderState.FAILED, "could not reach the drop-off point")
+        # 3) Carry it to the delivery bay. The robot is now loaded, which the condition model
+        #    needs to know: payload drives both energy draw and heating.
+        self._publish_activity("working", payload, order_id)
+        self._publish_status(order_id, "delivering", MAX_GRAB_ATTEMPTS,
+                             f"carrying to {order['dropoff']}")
+        if not self.navigate_to(*order["dropoff"]):
+            self._publish_status(order_id, "failed", 0, "could not reach the delivery bay")
+            self.return_to_station()
             return False
 
         # 4) Put it down.
-        self._set_state(order, OrderState.RELEASING, "releasing the item")
-        response = self.call_gripper(self.release_client, order.item, release=True)
+        self._publish_status(order_id, "releasing", 0, "releasing the parcel")
+        response = self.call_gripper(self.release_client, model, release=True)
         if response is None or not response.success:
-            self._set_state(order, OrderState.FAILED, "release failed")
+            self._publish_status(order_id, "failed", 0, "release failed")
+            self.return_to_station()
             return False
+        self._publish_activity("working", 0.0, order_id)
 
-        # Physically confirm the parcel is at the drop-off point.
+        # 5) C3: confirm against the simulator, not against our own commands.
         self._sleep(1.0)
-        where = self.item_poses.get(order.item)
+        where = self.parcel_poses.get(model)
         if where is None:
-            self._set_state(order, OrderState.FAILED,
-                            f"cannot confirm delivery: no pose for {order.item}")
-            self.get_logger().error(f"[order {order.order_id}] {order.detail}")
+            self._publish_status(order_id, "failed", 0,
+                                 f"cannot confirm delivery: no pose for {model}")
+            self.return_to_station()
             return False
-        gap = distance(where, order.dropoff)
+        gap = distance(where, order["dropoff"])
         if gap > self.delivery_tolerance:
-            self._set_state(order, 
-                OrderState.FAILED,
-                f"{order.item} ended {gap:.2f} m from the drop-off - it was never carried")
-            self.get_logger().error(f"[order {order.order_id}] {order.detail}")
+            self._publish_status(
+                order_id, "failed", 0,
+                f"{model} ended {gap:.2f} m from the bay - it was never carried")
+            self.get_logger().error(f"[order {order_id}] NOT delivered ({gap:.2f} m off)")
+            self.return_to_station()
             return False
 
-        self._set_state(order, OrderState.COMPLETED, f"delivered ({gap:.2f} m from target)")
+        self._publish_status(order_id, "completed", 0, f"delivered ({gap:.2f} m from target)")
         self.get_logger().info(
-            f"[order {order.order_id}] DELIVERED - {order.item} is {gap:.2f} m from "
-            f"{order.dropoff}")
+            f"[order {order_id}] DELIVERED - {model} is {gap:.2f} m from {order['dropoff']}")
         return True
 
-    def _set_state(self, order, state, detail=""):
-        """Record a transition AND push it to the bridge, so the client sees it live."""
-        order.set_state(state, detail)
-        self._publish_status(order)
-
-    def _grab_with_retries(self, order):
-        """Attempt the grab, retrying up to max_grab_attempts times (FR4).
-
-        Between attempts the robot backs off and DRIVES TO THE PICKUP POINT AGAIN rather
-        than simply waiting. The usual reason a grab fails is that the robot parked too
-        far from the parcel, and re-approaching is what actually changes that; waiting
-        alone would just fail again identically.
-
-        The decision of retry-vs-give-up lives in robofetch_core.retry so it can be unit
-        tested; this method only carries the decision out.
-        """
-        while True:
-            self._set_state(order, OrderState.GRABBING,
-                            f"attempt {order.attempts + 1} of {self.max_grab_attempts}")
-            self.get_logger().info(f"[order {order.order_id}] {order.detail}")
-
-            order.attempts += 1
-            response = self.call_gripper(self.grab_client, order.item, release=False)
-            success = response is not None and response.success
-            if response is not None and not success:
-                self.get_logger().warn(f"[order {order.order_id}] {response.message}")
-
-            decision = decide_after_grab(success, order.attempts, self.max_grab_attempts)
-            detail = describe(decision, order.item, order.attempts,
-                              self.max_grab_attempts)
-            self._set_state(order, next_state(decision), detail)
-
-            if decision is GrabDecision.PROCEED:
-                self.get_logger().info(f"[order {order.order_id}] {detail}")
-                return True
-
-            if decision is GrabDecision.GIVE_UP:
-                self.get_logger().error(f"[order {order.order_id}] {detail}")
-                return False
-
-            # RETRY: wait, then re-approach the pickup point before trying again.
-            wait = backoff_seconds(order.attempts)
-            self.get_logger().warn(
-                f"[order {order.order_id}] {detail} (waiting {wait:.0f} s)")
-            self._sleep(wait)
-            if not self.navigate_to(*order.pickup):
-                self._set_state(order, OrderState.FAILED,
-                                "could not re-approach the pickup point for a retry")
-                self.get_logger().error(f"[order {order.order_id}] {order.detail}")
-                return False
-
+    # ------------------------------------------------------------------- worker
     def _run(self):
-        """Worker thread: wait for the stack, then execute the single M4 order."""
         self.get_logger().info("Task manager starting; waiting for Nav2 and gripper ...")
         self.nav_client.wait_for_server()
         self.grab_client.wait_for_service()
         self.release_client.wait_for_service()
         self.get_logger().info("Nav2 and gripper are up.")
 
-        # Localize before doing anything else. The handshake blocks until AMCL confirms,
-        # which also proves the localization half of Nav2 is active and will accept goals.
-        #
-        # This RETRIES instead of giving up. Returning from this thread used to leave the
-        # node alive but inert: it stayed subscribed to /orders/new, so the web API kept
-        # accepting orders perfectly happily, and every one of them sat at 'pending'
-        # forever with no error in the API, the database or the client's response. From
-        # the second terminal that is indistinguishable from a working system.
-        #
-        # The condition is also usually TEMPORARY - AMCL's 90 s budget expires when the
-        # machine is loaded (a colcon build that just finished, Gazebo and Nav2 still
-        # starting), and it localizes fine a few seconds later. Giving up permanently on a
-        # recoverable startup race is the worst of both worlds, so keep trying.
+        # Retry localization rather than giving up. Returning here would leave the node alive
+        # but inert: still subscribed to /orders/new, so the API keeps accepting orders that
+        # can never run, and each sits at 'pending' forever with no error anywhere.
         if self.get_parameter("publish_initial_pose").value:
-            round_number = 0
+            rounds = 0
             while not self._publish_initial_pose():
-                round_number += 1
+                rounds += 1
                 self.get_logger().error(
-                    f"Still cannot localize the robot after round {round_number}. "
-                    "NO ORDER CAN RUN until AMCL confirms a pose - submitted orders will "
-                    "stay 'pending'. Is the map server up and the map correct? Retrying ...")
+                    f"Still cannot localize the robot after round {rounds}. NO ORDER CAN RUN "
+                    "until AMCL confirms a pose. Retrying ...")
                 self._sleep(5.0)
         elif not self._amcl_ready.wait(90.0):
             self.get_logger().warn("No /amcl_pose; set the initial pose in RViz.")
-        self._sleep(3.0)     # let the particle filter settle before the first goal
+        self._sleep(3.0)        # let the particle filter settle before the first goal
 
         self.get_logger().info("Localized and ready - orders submitted now will execute.")
-        self._run_queue()
+        self._publish_activity("charging")      # boots docked on the station
+        self._serve_queue()
 
-    def _run_queue(self):
-        """Serve every pending order, choosing the nearest one each time (UC3).
+    def _serve_queue(self):
+        """Serve orders oldest-first, and go home when there is nothing to do (FR6, FR11)."""
+        idle_since = time.time()
+        at_station = True
 
-        The scheduler is re-run after each delivery rather than fixing a route up front,
-        so the decision always reflects where the robot actually ended up - and so newly
-        arriving orders (M7) are considered automatically.
-        """
-        submitted = [o.item for o in self.orders]
-        self.get_logger().info(f"Queue submitted in this order: {submitted}")
-
-        served = []
-        idle_logged = False
         while True:
-            with self._orders_lock:
-                waiting = pending_orders(self.orders)
-            if not waiting:
-                if not self.run_forever:
-                    break
-                # Driven by the web API: stay alive and wait for the next order.
-                if not idle_logged:
-                    self.get_logger().info("Queue empty; waiting for new orders ...")
-                    idle_logged = True
-                self._sleep(1.0)
+            with self._queue_lock:
+                order = self._queue.pop(0) if self._queue else None
+
+            if order is not None:
+                at_station = False
+                self.execute_order(order)
+                idle_since = time.time()
+                # After each order the robot is at a delivery bay. Do not drive home yet -
+                # another order may be waiting, and the idle timer below handles the rest.
+                self._publish_activity("idle")
                 continue
-            idle_logged = False
 
-            order = select_next_order(self.robot_position, self.orders)
-            gap = distance(self.robot_position, order.pickup)
-            others = ", ".join(
-                f"{o.item}@{distance(self.robot_position, o.pickup):.2f}m"
-                for o in waiting if o is not order)
-            self.get_logger().info(
-                f"SCHEDULER: at ({self.robot_position[0]:.2f}, "
-                f"{self.robot_position[1]:.2f}) -> choosing {order.item} "
-                f"({gap:.2f} m away)" + (f"; passed over {others}" if others else ""))
+            if not at_station and time.time() - idle_since >= self.idle_return_seconds:
+                self.get_logger().info(
+                    f"No orders for {self.idle_return_seconds:.0f} s - returning to station.")
+                at_station = self.return_to_station()
+                idle_since = time.time()
 
-            self.execute_order(order)
-            served.append(order.item)
-            # After a delivery the robot is at that order's drop-off point; AMCL keeps
-            # self.robot_position current, so the next choice starts from there.
-
-        self.get_logger().info(f"Queue finished. Submitted {submitted}, served {served}.")
-        for order in self.orders:
-            self.get_logger().info(
-                f"  order {order.order_id} ({order.item}): {order.state.value} "
-                f"- {order.detail}")
+            self._sleep(1.0)
 
 
 def main():

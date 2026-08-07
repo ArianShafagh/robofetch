@@ -16,3 +16,9 @@ __pycache__/
 
 # Editor
 .vscode/
+
+# Per-run telemetry logs and the synthetic training set. Both are regenerated: the logs by
+# every launch, the CSV by tools/ml/generate.py. The trained model.joblib IS committed,
+# because the running system depends on it while the generator is meant to be deleted.
+logs/
+tools/ml/runs.csv

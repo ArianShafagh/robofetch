@@ -1,136 +1,194 @@
-"""Unit tests for the SQLite persistence layer (proposal 2.1, 5.2, 5.4).
+"""Unit tests for the SQLite layer (proposal category A).
 
-Covers the CRUD operations and the analytics aggregates, including the rule that an
-order can only be cancelled while it is still pending.
-
-Run with:  pytest src/robofetch_bridge/test/test_db.py -v
+Plain sqlite3 in, plain dicts out - no ROS and no FastAPI, so these run in milliseconds.
 """
+import os
+import tempfile
+
 import pytest
 
 from robofetch_bridge.db import Database
 
 
 @pytest.fixture
-def db(tmp_path):
-    return Database(tmp_path / "test.db")
+def db():
+    with tempfile.TemporaryDirectory() as folder:
+        yield Database(os.path.join(folder, "test.db"))
 
 
-# ------------------------------------------------------------------- locations
-def test_default_locations_are_seeded(db):
-    names = [loc["name"] for loc in db.list_locations()]
-    assert "shelf_1" in names and "delivery_1" in names
+# ------------------------------------------------------------------- seeding
+def test_first_run_seeds_the_catalogue_and_the_layout(db):
+    products = db.list_products()
+    assert len(products) == 6
+    assert {p["product_id"] for p in products} == {
+        "SKU-1001", "SKU-1002", "SKU-2001", "SKU-2002", "SKU-3001", "SKU-3002"}
+    assert len(db.list_shelves()) == 3
+    assert len(db.list_pick_points()) == 6
+    assert len(db.list_delivery_points()) == 2
+    assert db.get_station()["station_id"] == "station_1"
 
 
-def test_add_and_read_back_a_location(db):
-    db.upsert_location("bay_7", 1.25, -0.5)
-    assert db.get_location("bay_7") == {"name": "bay_7", "x": 1.25, "y": -0.5}
+def test_every_product_resolves_to_a_pick_point(db):
+    """An order carries a product id, so the join to coordinates must never be missing."""
+    for product in db.list_products():
+        assert product["pick_x"] is not None
+        assert product["pick_y"] is not None
 
 
-def test_upsert_updates_an_existing_location(db):
-    db.upsert_location("bay_7", 1.0, 1.0)
-    db.upsert_location("bay_7", 2.0, 3.0)
-    assert db.get_location("bay_7")["x"] == 2.0
-    assert len([l for l in db.list_locations() if l["name"] == "bay_7"]) == 1
+def test_two_products_per_shelf_are_spaced_apart(db):
+    """Parcels are not lifted when carried, so physical separation is what stops collisions."""
+    by_shelf = {}
+    for product in db.list_products():
+        by_shelf.setdefault(product["shelf_id"], []).append(product)
+    for shelf, items in by_shelf.items():
+        assert len(items) == 2, shelf
+        gap = abs(items[0]["pick_x"] - items[1]["pick_x"]) + \
+              abs(items[0]["pick_y"] - items[1]["pick_y"])
+        assert gap >= 0.8, f"{shelf} pick points are only {gap:.2f} m apart"
 
 
-def test_delete_location(db):
-    db.upsert_location("temp", 0.0, 0.0)
-    assert db.delete_location("temp") is True
-    assert db.get_location("temp") is None
-    assert db.delete_location("temp") is False
+def test_delivery_points_are_far_apart(db):
+    a, b = db.list_delivery_points()
+    assert abs(a["x"] - b["x"]) > 4.0
 
 
-# ---------------------------------------------------------------------- orders
-def test_create_order_starts_pending(db):
-    order = db.create_order("item_1", "shelf_1", "delivery_1")
+def test_seeding_is_idempotent(db):
+    Database(db.path)                       # open the same file again
+    assert len(db.list_products()) == 6
+
+
+# ------------------------------------------------------------------ products
+def test_product_crud(db):
+    assert db.get_product("SKU-9999") is None
+    created = db.upsert_product("SKU-9999", "Test widget", "test", 2.5, 4,
+                                "shelf_1", "pick_1a", "parcel_1")
+    assert created["name"] == "Test widget"
+    assert created["weight_kg"] == 2.5
+
+    updated = db.upsert_product("SKU-9999", "Renamed", "test", 3.0, 1,
+                                "shelf_1", "pick_1a", "parcel_1")
+    assert updated["name"] == "Renamed"
+    assert len([p for p in db.list_products() if p["product_id"] == "SKU-9999"]) == 1
+
+    assert db.delete_product("SKU-9999") is True
+    assert db.delete_product("SKU-9999") is False
+
+
+def test_delivery_point_crud(db):
+    db.upsert_delivery_point("delivery_9", "Test bay", 1.0, 2.0)
+    assert db.get_delivery_point("delivery_9")["name"] == "Test bay"
+    assert db.delete_delivery_point("delivery_9") is True
+    assert db.get_delivery_point("delivery_9") is None
+
+
+# -------------------------------------------------------------------- orders
+def test_create_order_resolves_names_and_starts_pending(db):
+    order = db.create_order("SKU-1001", "delivery_1")
     assert order["status"] == "pending"
-    assert order["item"] == "item_1"
-    assert order["retries"] == 0
+    assert order["product_name"] == "Bearing set 6204-ZZ"
+    assert order["weight_kg"] == 1.8
+    assert order["delivery_name"] == "South-west bay"
+
+
+def test_unknown_product_or_destination_is_rejected(db):
+    with pytest.raises(ValueError, match="unknown product"):
+        db.create_order("SKU-NOPE", "delivery_1")
+    with pytest.raises(ValueError, match="unknown delivery point"):
+        db.create_order("SKU-1001", "delivery_nope")
+
+
+def test_the_admission_estimate_is_stored_with_the_order(db):
+    """So the report can compare what was predicted against what happened."""
+    order = db.create_order(
+        "SKU-3001", "delivery_2",
+        estimate={"distance_m": 9.1, "energy_wh": 6.2, "seconds": 58.0},
+        decision="accepted", reason="fine", decided_by="model")
+    assert order["estimated_distance_m"] == pytest.approx(9.1)
+    assert order["estimated_energy_wh"] == pytest.approx(6.2)
+    assert order["decision"] == "accepted"
+    assert order["decided_by"] == "model"
+
+
+def test_orders_are_served_oldest_first(db):
+    first = db.create_order("SKU-1001", "delivery_1")
+    db.create_order("SKU-2001", "delivery_2")
+    assert db.next_pending_order()["id"] == first["id"]
+
+    db.update_order(first["id"], status="completed")
+    assert db.next_pending_order()["product_id"] == "SKU-2001"
+
+
+def test_next_pending_order_is_none_when_the_queue_is_empty(db):
+    assert db.next_pending_order() is None
+
+
+def test_terminal_status_stamps_completed_at(db):
+    order = db.create_order("SKU-1001", "delivery_1")
     assert order["completed_at"] is None
+    assert db.update_order(order["id"], status="completed")["completed_at"] is not None
 
 
-def test_order_with_unknown_location_is_rejected(db):
-    with pytest.raises(ValueError, match="unknown pickup"):
-        db.create_order("item_1", "nowhere", "delivery_1")
-    with pytest.raises(ValueError, match="unknown drop-off"):
-        db.create_order("item_1", "shelf_1", "nowhere")
-
-
-def test_list_orders_can_filter_by_status(db):
-    a = db.create_order("item_1", "shelf_1", "delivery_1")
-    db.create_order("item_2", "shelf_2", "delivery_2")
-    db.update_order(a["id"], status="completed")
-    assert len(db.list_orders()) == 2
-    assert len(db.list_orders(status="pending")) == 1
-    assert len(db.list_orders(status="completed")) == 1
-
-
-def test_completing_an_order_stamps_completed_at(db):
-    order = db.create_order("item_1", "shelf_1", "delivery_1")
-    updated = db.update_order(order["id"], status="completed", detail="delivered")
-    assert updated["completed_at"] is not None
-    assert updated["detail"] == "delivered"
-
-
-def test_retries_are_recorded(db):
-    order = db.create_order("item_1", "shelf_1", "delivery_1")
-    updated = db.update_order(order["id"], retries=3, status="failed")
-    assert updated["retries"] == 3
-
-
-# -------------------------------------------------------------------- cancelling
-def test_pending_order_can_be_cancelled(db):
-    order = db.create_order("item_1", "shelf_1", "delivery_1")
+def test_cancel_only_while_pending(db):
+    order = db.create_order("SKU-1001", "delivery_1")
     cancelled, error = db.cancel_order(order["id"])
-    assert error is None
-    assert cancelled["status"] == "cancelled"
+    assert error is None and cancelled["status"] == "cancelled"
+
+    again, error = db.cancel_order(order["id"])
+    assert again is not None and "cannot cancel" in error
+
+    missing, error = db.cancel_order(999)
+    assert missing is None and error == "no such order"
 
 
-def test_order_in_progress_cannot_be_cancelled(db):
-    order = db.create_order("item_1", "shelf_1", "delivery_1")
-    db.update_order(order["id"], status="delivering")
-    _, error = db.cancel_order(order["id"])
-    assert error is not None and "cannot cancel" in error
+# ------------------------------------------------------- telemetry & history
+def test_robot_state_updates_only_the_fields_supplied(db):
+    db.update_robot_state(battery_percent=64.0, temperature_c=41.0)
+    db.update_robot_state(state="working")
+    current = db.get_robot_state()
+    assert current["battery_percent"] == pytest.approx(64.0)
+    assert current["temperature_c"] == pytest.approx(41.0)
+    assert current["state"] == "working"
 
 
-def test_cancelling_a_missing_order_reports_an_error(db):
-    order, error = db.cancel_order(999)
-    assert order is None and error == "no such order"
+def test_telemetry_is_appended_newest_first(db):
+    for battery in (90.0, 80.0, 70.0):
+        db.record_telemetry({"battery_percent": battery, "state": "working"})
+    samples = db.list_telemetry(limit=10)
+    assert len(samples) == 3
+    assert samples[0]["battery_percent"] == pytest.approx(70.0)
 
 
-# ------------------------------------------------------------------- robot state
-def test_robot_state_round_trip(db):
-    db.update_robot_state(x=1.5, y=-2.0, status="delivering")
-    state = db.get_robot_state()
-    assert state["x"] == 1.5 and state["y"] == -2.0
-    assert state["status"] == "delivering"
-    assert state["last_update"] is not None
+def test_history_records_the_outcome(db):
+    order = db.create_order("SKU-1001", "delivery_1")
+    db.record_history(order["id"], 61.0, 9.2, 6.4, 1.8, "completed")
+    history = db.list_history()
+    assert len(history) == 1 and history[0]["outcome"] == "completed"
+    assert history[0]["energy_wh"] == pytest.approx(6.4)
 
 
-# --------------------------------------------------------------------- analytics
+# ------------------------------------------------------------------ analytics
+def test_analytics_counts_every_terminal_state(db):
+    completed = db.create_order("SKU-1001", "delivery_1")
+    failed = db.create_order("SKU-1002", "delivery_1")
+    refused = db.create_order("SKU-2001", "delivery_2")
+    db.create_order("SKU-2002", "delivery_2")               # left pending
+
+    db.update_order(completed["id"], status="completed")
+    db.update_order(failed["id"], status="failed")
+    db.update_order(refused["id"], status="refused")
+
+    stats = db.analytics()
+    assert stats["total_orders"] == 4
+    assert stats["completed"] == 1
+    assert stats["failed"] == 1
+    assert stats["refused"] == 1
+    assert stats["pending"] == 1
+    # Rate is over FINISHED orders only: queued and refused work must not drag it down.
+    assert stats["success_rate"] == pytest.approx(0.5)
+
+
 def test_analytics_on_an_empty_database(db):
     stats = db.analytics()
     assert stats["total_orders"] == 0
     assert stats["success_rate"] is None
     assert stats["average_delivery_seconds"] is None
-
-
-def test_analytics_counts_and_success_rate(db):
-    ids = [db.create_order(f"item_{i}", "shelf_1", "delivery_1")["id"]
-           for i in range(1, 5)]
-    db.update_order(ids[0], status="completed")
-    db.update_order(ids[1], status="completed")
-    db.update_order(ids[2], status="failed")
-    # ids[3] stays pending
-    stats = db.analytics()
-    assert stats["total_orders"] == 4
-    assert stats["completed"] == 2 and stats["failed"] == 1 and stats["pending"] == 1
-    # 2 of 3 FINISHED orders succeeded; the pending one must not drag the rate down.
-    assert stats["success_rate"] == pytest.approx(0.667, abs=1e-3)
-
-
-def test_history_round_trip(db):
-    order = db.create_order("item_1", "shelf_1", "delivery_1")
-    db.record_history(order["id"], duration=42.0, distance=7.5, outcome="completed")
-    rows = db.list_history()
-    assert len(rows) == 1 and rows[0]["duration"] == 42.0

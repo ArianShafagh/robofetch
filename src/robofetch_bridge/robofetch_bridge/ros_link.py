@@ -2,72 +2,68 @@
 
 A single rclpy node that the FastAPI process owns:
 
-    publishes  /orders/new     - orders submitted through the REST API
-    subscribes /orders/status  - state changes coming back from the Task Manager
-    subscribes /amcl_pose      - the robot's live position, for the map view
+    publishes  /orders/new       - orders the admission workflow accepted
+    subscribes /orders/status    - state changes coming back from the task manager
+    subscribes /robot/telemetry  - battery, temperature, condition from the state model
+    subscribes /amcl_pose        - the robot's position
 
-It runs on a background thread inside the FastAPI process (the pattern the proposal
-describes), so HTTP handlers can publish ROS messages directly.
+It runs on a background thread inside the FastAPI process, so an HTTP handler can publish a
+ROS message directly.
 
-Everything crossing the boundary is JSON on std_msgs/String. That keeps the web layer
-free of custom ROS message dependencies, which matters because the frontend ultimately
-consumes the same payloads over the WebSocket.
+Note on `/amcl_pose`: the web pages deliberately do **not** show where the robot is - the
+operator places orders, they do not watch the robot drive. The position is still needed
+internally, because admission control has to measure the route from wherever the robot
+actually is before it can cost the job.
+
+Everything crossing the boundary is JSON on std_msgs/String, which keeps the web layer free of
+custom ROS message dependencies.
 """
 import json
-import math
 import threading
 
 import rclpy
-from geometry_msgs.msg import Pose, PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseWithCovarianceStamped
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import String
 
-# Parcels whose world pose is forwarded to the dashboard. These are the items that have a
-# DetachableJoint and a PosePublisher in warehouse.sdf; the names must match it.
-ITEMS = ("item_1", "item_2", "item_3")
-
-# Only forward a parcel once it has moved this far since the last message. A carried
-# parcel otherwise streams at the PosePublisher's 20 Hz, which is far more than a map view
-# needs and puts pointless traffic on every open WebSocket.
-ITEM_MOVE_EPSILON = 0.02        # metres
-
 
 class RosLink(Node):
-    def __init__(self, on_status=None, on_pose=None, on_item=None):
+    def __init__(self, on_status=None, on_telemetry=None):
         super().__init__("robofetch_bridge")
         self._on_status = on_status
-        self._on_pose = on_pose
-        self._on_item = on_item
+        self._on_telemetry = on_telemetry
 
         self.order_pub = self.create_publisher(String, "/orders/new", 10)
         self.create_subscription(String, "/orders/status", self._handle_status, 10)
+        self.create_subscription(String, "/robot/telemetry", self._handle_telemetry, 10)
         self.create_subscription(PoseWithCovarianceStamped, "/amcl_pose",
                                  self._handle_pose, 10)
 
-        # The parcels' REAL positions in Gazebo. The dashboard draws these rather than
-        # inferring where a parcel "should" be from the order status, so the map shows
-        # physical reality and not just what the software believes - the whole point of
-        # HANDOVER 5.4, made visible in the browser.
-        self.item_poses = {}
-        for item in ITEMS:
-            self.create_subscription(
-                Pose, f"/model/{item}/pose",
-                lambda msg, name=item: self._handle_item(name, msg), 10)
+        # Internal only - used to measure routes, never rendered in the UI.
+        self.robot_xy = None
+        self.telemetry = {}
 
-        self.robot_pose = {"x": 0.0, "y": 0.0}
         self.get_logger().info(
-            "Bridge node up: /orders/new, /orders/status, /amcl_pose, "
-            f"/model/<item>/pose for {list(ITEMS)}")
+            "Bridge node up: /orders/new, /orders/status, /robot/telemetry, /amcl_pose")
 
     # ------------------------------------------------------------------ outgoing
-    def submit_order(self, order_id, item, pickup, dropoff):
-        """Send an accepted order to the Task Manager."""
+    def submit_order(self, order_id, product, pickup, dropoff):
+        """Hand an accepted order to the robot.
+
+        The product is resolved to a simulator model name and a weight here, so the robot side
+        deals only in numbers and model names - it never needs the catalogue.
+        """
         self.order_pub.publish(String(data=json.dumps({
-            "id": order_id, "item": item,
-            "pickup": list(pickup), "dropoff": list(dropoff),
+            "id": order_id,
+            "product_id": product["product_id"],
+            "model": product["model_name"],
+            "weight_kg": product["weight_kg"],
+            "pickup": list(pickup),
+            "dropoff": list(dropoff),
         })))
-        self.get_logger().info(f"Submitted order {order_id} ({item}) to the robot.")
+        self.get_logger().info(
+            f"Submitted order {order_id} ({product['product_id']}) to the robot.")
 
     # ------------------------------------------------------------------ incoming
     def _handle_status(self, msg):
@@ -79,28 +75,26 @@ class RosLink(Node):
         if self._on_status:
             self._on_status(payload)
 
+    def _handle_telemetry(self, msg):
+        try:
+            payload = json.loads(msg.data)
+        except ValueError:
+            return
+        self.telemetry = payload
+        if self._on_telemetry:
+            self._on_telemetry(payload)
+
     def _handle_pose(self, msg):
         p = msg.pose.pose.position
-        self.robot_pose = {"x": p.x, "y": p.y}
-        if self._on_pose:
-            self._on_pose(self.robot_pose)
-
-    def _handle_item(self, name, msg):
-        """Cache a parcel's world pose, forwarding it only when it has actually moved."""
-        previous = self.item_poses.get(name)
-        moved = previous is None or math.hypot(msg.position.x - previous["x"],
-                                               msg.position.y - previous["y"]) > ITEM_MOVE_EPSILON
-        self.item_poses[name] = {"x": msg.position.x, "y": msg.position.y}
-        if moved and self._on_item:
-            self._on_item({"name": name, **self.item_poses[name]})
+        self.robot_xy = (p.x, p.y)
 
 
 class RosThread:
     """Runs an rclpy executor on a daemon thread alongside FastAPI."""
 
-    def __init__(self, on_status=None, on_pose=None, on_item=None):
+    def __init__(self, on_status=None, on_telemetry=None):
         rclpy.init()
-        self.node = RosLink(on_status=on_status, on_pose=on_pose, on_item=on_item)
+        self.node = RosLink(on_status=on_status, on_telemetry=on_telemetry)
         self._executor = MultiThreadedExecutor()
         self._executor.add_node(self.node)
         self._thread = threading.Thread(target=self._executor.spin, daemon=True)

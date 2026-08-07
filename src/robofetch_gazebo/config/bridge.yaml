@@ -9,7 +9,7 @@
   gz_type_name: "gz.msgs.Twist"
   direction: ROS_TO_GZ
 
-# Wheel odometry: Gazebo -> ROS
+# Wheel odometry: Gazebo -> ROS. Also the distance source for the robot state model.
 - ros_topic_name: "odom"
   gz_topic_name: "odom"
   ros_type_name: "nav_msgs/msg/Odometry"
@@ -44,92 +44,178 @@
   gz_type_name: "gz.msgs.Clock"
   direction: GZ_TO_ROS
 
-# --- Gripper (DetachableJoint on the robot's gripper_link) ---
-# Publishing an Empty on attach/detach grabs/releases the item.
-- ros_topic_name: "/gripper/item_1/attach"
-  gz_topic_name: "/gripper/item_1/attach"
-  ros_type_name: "std_msgs/msg/Empty"
-  gz_type_name: "gz.msgs.Empty"
-  direction: ROS_TO_GZ
-
-- ros_topic_name: "/gripper/item_1/detach"
-  gz_topic_name: "/gripper/item_1/detach"
-  ros_type_name: "std_msgs/msg/Empty"
-  gz_type_name: "gz.msgs.Empty"
-  direction: ROS_TO_GZ
-
-# World poses of the robot and the item, each on its own named topic (published by the
-# PosePublisher plugins). The gripper node compares them to VERIFY a grab actually took
-# hold rather than trusting the command blindly -- this is what makes the M6 retry state
-# machine meaningful.
+# The robot's own world pose. ros_gz_bridge DROPS per-entity names when converting the bulk
+# gz.msgs.Pose_V topic, so every model needs its own named PosePublisher topic instead.
 - ros_topic_name: "/model/robofetch/pose"
   gz_topic_name: "/model/robofetch/pose"
   ros_type_name: "geometry_msgs/msg/Pose"
   gz_type_name: "gz.msgs.Pose"
   direction: GZ_TO_ROS
 
-- ros_topic_name: "/model/item_1/pose"
-  gz_topic_name: "/model/item_1/pose"
-  ros_type_name: "geometry_msgs/msg/Pose"
-  gz_type_name: "gz.msgs.Pose"
-  direction: GZ_TO_ROS
-
-- ros_topic_name: "/gripper/item_2/attach"
-  gz_topic_name: "/gripper/item_2/attach"
+# ------------------------------- parcel_1 -------------------------------
+- ros_topic_name: "/gripper/parcel_1/attach"
+  gz_topic_name: "/gripper/parcel_1/attach"
   ros_type_name: "std_msgs/msg/Empty"
   gz_type_name: "gz.msgs.Empty"
   direction: ROS_TO_GZ
 
-- ros_topic_name: "/gripper/item_2/detach"
-  gz_topic_name: "/gripper/item_2/detach"
+- ros_topic_name: "/gripper/parcel_1/detach"
+  gz_topic_name: "/gripper/parcel_1/detach"
   ros_type_name: "std_msgs/msg/Empty"
   gz_type_name: "gz.msgs.Empty"
   direction: ROS_TO_GZ
 
-- ros_topic_name: "/model/item_2/pose"
-  gz_topic_name: "/model/item_2/pose"
-  ros_type_name: "geometry_msgs/msg/Pose"
-  gz_type_name: "gz.msgs.Pose"
-  direction: GZ_TO_ROS
-
-- ros_topic_name: "/gripper/item_3/attach"
-  gz_topic_name: "/gripper/item_3/attach"
-  ros_type_name: "std_msgs/msg/Empty"
-  gz_type_name: "gz.msgs.Empty"
-  direction: ROS_TO_GZ
-
-- ros_topic_name: "/gripper/item_3/detach"
-  gz_topic_name: "/gripper/item_3/detach"
-  ros_type_name: "std_msgs/msg/Empty"
-  gz_type_name: "gz.msgs.Empty"
-  direction: ROS_TO_GZ
-
-- ros_topic_name: "/model/item_3/pose"
-  gz_topic_name: "/model/item_3/pose"
-  ros_type_name: "geometry_msgs/msg/Pose"
-  gz_type_name: "gz.msgs.Pose"
-  direction: GZ_TO_ROS
-
-# DetachableJoint reports its real attach state here - the authoritative answer to
-# "is the parcel actually held?", far better than guessing from proximity.
-- ros_topic_name: "/gripper/item_1/state"
-  gz_topic_name: "/gripper/item_1/state"
+# The DetachableJoint's own attach state - the AUTHORITATIVE answer to "is the parcel really
+# held?", far better than guessing from proximity. Publishes only on transitions.
+- ros_topic_name: "/gripper/parcel_1/state"
+  gz_topic_name: "/gripper/parcel_1/state"
   ros_type_name: "std_msgs/msg/String"
   gz_type_name: "gz.msgs.StringMsg"
   direction: GZ_TO_ROS
 
-# DetachableJoint reports its real attach state here - the authoritative answer to
-# "is the parcel actually held?", far better than guessing from proximity.
-- ros_topic_name: "/gripper/item_2/state"
-  gz_topic_name: "/gripper/item_2/state"
+# World pose, used to verify a delivery physically happened (proposal C3).
+- ros_topic_name: "/model/parcel_1/pose"
+  gz_topic_name: "/model/parcel_1/pose"
+  ros_type_name: "geometry_msgs/msg/Pose"
+  gz_type_name: "gz.msgs.Pose"
+  direction: GZ_TO_ROS
+
+# ------------------------------- parcel_2 -------------------------------
+- ros_topic_name: "/gripper/parcel_2/attach"
+  gz_topic_name: "/gripper/parcel_2/attach"
+  ros_type_name: "std_msgs/msg/Empty"
+  gz_type_name: "gz.msgs.Empty"
+  direction: ROS_TO_GZ
+
+- ros_topic_name: "/gripper/parcel_2/detach"
+  gz_topic_name: "/gripper/parcel_2/detach"
+  ros_type_name: "std_msgs/msg/Empty"
+  gz_type_name: "gz.msgs.Empty"
+  direction: ROS_TO_GZ
+
+# The DetachableJoint's own attach state - the AUTHORITATIVE answer to "is the parcel really
+# held?", far better than guessing from proximity. Publishes only on transitions.
+- ros_topic_name: "/gripper/parcel_2/state"
+  gz_topic_name: "/gripper/parcel_2/state"
   ros_type_name: "std_msgs/msg/String"
   gz_type_name: "gz.msgs.StringMsg"
   direction: GZ_TO_ROS
 
-# DetachableJoint reports its real attach state here - the authoritative answer to
-# "is the parcel actually held?", far better than guessing from proximity.
-- ros_topic_name: "/gripper/item_3/state"
-  gz_topic_name: "/gripper/item_3/state"
+# World pose, used to verify a delivery physically happened (proposal C3).
+- ros_topic_name: "/model/parcel_2/pose"
+  gz_topic_name: "/model/parcel_2/pose"
+  ros_type_name: "geometry_msgs/msg/Pose"
+  gz_type_name: "gz.msgs.Pose"
+  direction: GZ_TO_ROS
+
+# ------------------------------- parcel_3 -------------------------------
+- ros_topic_name: "/gripper/parcel_3/attach"
+  gz_topic_name: "/gripper/parcel_3/attach"
+  ros_type_name: "std_msgs/msg/Empty"
+  gz_type_name: "gz.msgs.Empty"
+  direction: ROS_TO_GZ
+
+- ros_topic_name: "/gripper/parcel_3/detach"
+  gz_topic_name: "/gripper/parcel_3/detach"
+  ros_type_name: "std_msgs/msg/Empty"
+  gz_type_name: "gz.msgs.Empty"
+  direction: ROS_TO_GZ
+
+# The DetachableJoint's own attach state - the AUTHORITATIVE answer to "is the parcel really
+# held?", far better than guessing from proximity. Publishes only on transitions.
+- ros_topic_name: "/gripper/parcel_3/state"
+  gz_topic_name: "/gripper/parcel_3/state"
   ros_type_name: "std_msgs/msg/String"
   gz_type_name: "gz.msgs.StringMsg"
+  direction: GZ_TO_ROS
+
+# World pose, used to verify a delivery physically happened (proposal C3).
+- ros_topic_name: "/model/parcel_3/pose"
+  gz_topic_name: "/model/parcel_3/pose"
+  ros_type_name: "geometry_msgs/msg/Pose"
+  gz_type_name: "gz.msgs.Pose"
+  direction: GZ_TO_ROS
+
+# ------------------------------- parcel_4 -------------------------------
+- ros_topic_name: "/gripper/parcel_4/attach"
+  gz_topic_name: "/gripper/parcel_4/attach"
+  ros_type_name: "std_msgs/msg/Empty"
+  gz_type_name: "gz.msgs.Empty"
+  direction: ROS_TO_GZ
+
+- ros_topic_name: "/gripper/parcel_4/detach"
+  gz_topic_name: "/gripper/parcel_4/detach"
+  ros_type_name: "std_msgs/msg/Empty"
+  gz_type_name: "gz.msgs.Empty"
+  direction: ROS_TO_GZ
+
+# The DetachableJoint's own attach state - the AUTHORITATIVE answer to "is the parcel really
+# held?", far better than guessing from proximity. Publishes only on transitions.
+- ros_topic_name: "/gripper/parcel_4/state"
+  gz_topic_name: "/gripper/parcel_4/state"
+  ros_type_name: "std_msgs/msg/String"
+  gz_type_name: "gz.msgs.StringMsg"
+  direction: GZ_TO_ROS
+
+# World pose, used to verify a delivery physically happened (proposal C3).
+- ros_topic_name: "/model/parcel_4/pose"
+  gz_topic_name: "/model/parcel_4/pose"
+  ros_type_name: "geometry_msgs/msg/Pose"
+  gz_type_name: "gz.msgs.Pose"
+  direction: GZ_TO_ROS
+
+# ------------------------------- parcel_5 -------------------------------
+- ros_topic_name: "/gripper/parcel_5/attach"
+  gz_topic_name: "/gripper/parcel_5/attach"
+  ros_type_name: "std_msgs/msg/Empty"
+  gz_type_name: "gz.msgs.Empty"
+  direction: ROS_TO_GZ
+
+- ros_topic_name: "/gripper/parcel_5/detach"
+  gz_topic_name: "/gripper/parcel_5/detach"
+  ros_type_name: "std_msgs/msg/Empty"
+  gz_type_name: "gz.msgs.Empty"
+  direction: ROS_TO_GZ
+
+# The DetachableJoint's own attach state - the AUTHORITATIVE answer to "is the parcel really
+# held?", far better than guessing from proximity. Publishes only on transitions.
+- ros_topic_name: "/gripper/parcel_5/state"
+  gz_topic_name: "/gripper/parcel_5/state"
+  ros_type_name: "std_msgs/msg/String"
+  gz_type_name: "gz.msgs.StringMsg"
+  direction: GZ_TO_ROS
+
+# World pose, used to verify a delivery physically happened (proposal C3).
+- ros_topic_name: "/model/parcel_5/pose"
+  gz_topic_name: "/model/parcel_5/pose"
+  ros_type_name: "geometry_msgs/msg/Pose"
+  gz_type_name: "gz.msgs.Pose"
+  direction: GZ_TO_ROS
+
+# ------------------------------- parcel_6 -------------------------------
+- ros_topic_name: "/gripper/parcel_6/attach"
+  gz_topic_name: "/gripper/parcel_6/attach"
+  ros_type_name: "std_msgs/msg/Empty"
+  gz_type_name: "gz.msgs.Empty"
+  direction: ROS_TO_GZ
+
+- ros_topic_name: "/gripper/parcel_6/detach"
+  gz_topic_name: "/gripper/parcel_6/detach"
+  ros_type_name: "std_msgs/msg/Empty"
+  gz_type_name: "gz.msgs.Empty"
+  direction: ROS_TO_GZ
+
+# The DetachableJoint's own attach state - the AUTHORITATIVE answer to "is the parcel really
+# held?", far better than guessing from proximity. Publishes only on transitions.
+- ros_topic_name: "/gripper/parcel_6/state"
+  gz_topic_name: "/gripper/parcel_6/state"
+  ros_type_name: "std_msgs/msg/String"
+  gz_type_name: "gz.msgs.StringMsg"
+  direction: GZ_TO_ROS
+
+# World pose, used to verify a delivery physically happened (proposal C3).
+- ros_topic_name: "/model/parcel_6/pose"
+  gz_topic_name: "/model/parcel_6/pose"
+  ros_type_name: "geometry_msgs/msg/Pose"
+  gz_type_name: "gz.msgs.Pose"
   direction: GZ_TO_ROS

@@ -1,11 +1,13 @@
-"""RoboFetch delivery demo (M4).
+"""RoboFetch bring-up - starts the whole system.
 
-Brings up the whole robotic stack and runs one delivery order end to end:
+    Gazebo + robot + ros_gz bridge
+      -> Nav2 + AMCL + map
+      -> gripper node + robot condition monitor
+      -> task manager
+      -> web API (port 8000) + AI feasibility service (port 8001)
 
-    Gazebo + robot + bridge  ->  Nav2 + AMCL + map  ->  gripper node  ->  task manager
-
-The task manager publishes the robot's initial pose itself, so no RViz clicking is
-needed; it then drives to A, grabs the item, drives to B and releases it.
+Orders arrive over HTTP; the task manager publishes the robot's initial pose itself, so no
+RViz clicking is needed.
 
     ros2 launch robofetch_bringup delivery.launch.py
     ros2 launch robofetch_bringup delivery.launch.py rviz:=false     # headless-ish
@@ -24,7 +26,6 @@ from launch.conditions import IfCondition
 
 def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
-    orders = LaunchConfiguration("orders")
     use_rviz = LaunchConfiguration("rviz")
     gz_extra = LaunchConfiguration("gz_extra")
 
@@ -49,6 +50,15 @@ def generate_launch_description():
         forwarding=True,
     )
 
+    # Robot condition model: battery, temperature, wear, and the per-run CSV log (C1, FR12).
+    robot_state = Node(
+        package="robofetch_core",
+        executable="robot_state_node",
+        name="robot_state_node",
+        output="screen",
+        parameters=[{"use_sim_time": use_sim_time}],
+    )
+
     gripper = Node(
         package="robofetch_core",
         executable="gripper_node",
@@ -62,21 +72,15 @@ def generate_launch_description():
         executable="task_manager",
         name="task_manager",
         output="screen",
-        parameters=[{
-            "use_sim_time": use_sim_time,
-            "orders": orders,
-            # Orders now arrive over HTTP, so the manager must stay alive when idle.
-            "run_forever": True,
-        }],
+        parameters=[{"use_sim_time": use_sim_time}],
     )
 
     # The web tier runs on the VENV interpreter: FastAPI/uvicorn live there, while rclpy
     # comes from the sourced ROS environment (the venv was created with
     # --system-site-packages precisely so both are importable in one process).
     #
-    # ROBOFETCH_WEB is what activates the dashboard: app.py mounts that directory at /app
-    # and serves its index.html at /, but only if the variable is set and points somewhere
-    # real. Without this the mount is simply dead code and localhost:8000 has no UI.
+    # ROBOFETCH_WEB is what activates the UI: app.py loads its Jinja2 templates and CSS from
+    # that directory. Without it the pages cannot render at all.
     api = ExecuteProcess(
         cmd=[os.path.expanduser("~/robofetch_ws/robofetch_venv/bin/python"),
              "-m", "uvicorn", "robofetch_bridge.app:app",
@@ -88,6 +92,17 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("api")),
     )
 
+    # Feasibility model, deliberately a SEPARATE process on its own port: the main API has to
+    # keep working when this is down, and a network boundary makes that failure real rather
+    # than theoretical (NFR2).
+    ai_service = ExecuteProcess(
+        cmd=[os.path.expanduser("~/robofetch_ws/robofetch_venv/bin/python"),
+             "-m", "uvicorn", "robofetch_ai.service:app",
+             "--host", "0.0.0.0", "--port", "8001"],
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("api")),
+    )
+
     return LaunchDescription([
         DeclareLaunchArgument("use_sim_time", default_value="true"),
         DeclareLaunchArgument("rviz", default_value="true"),
@@ -95,18 +110,11 @@ def generate_launch_description():
                               description="Run the FastAPI web service on port 8000."),
         DeclareLaunchArgument("gz_extra", default_value="",
                               description="Extra gz args, e.g. '-s --headless-rendering'."),
-        # Override to stage acceptance tests, e.g. pointing a pickup away from its parcel
-        # to force grab failures and exercise the retry state machine:
-        #   orders:="['item_1,0.0,0.0,-3.1,-2.2']"
-        DeclareLaunchArgument(
-            "orders", default_value="",
-            description=("Semicolon-separated orders, e.g. "
-                         "'item_1,-2.5,0.95,-3.1,-2.2; item_3,2.75,-1.0,-2.6,-1.5'. "
-                         "Empty by default - orders normally arrive via the web API.")),
         navigation,
         # Give Gazebo and Nav2 time to come up before the gripper starts watching poses
         # and the task manager begins issuing goals.
-        TimerAction(period=12.0, actions=[gripper]),
+        TimerAction(period=8.0, actions=[ai_service]),
+        TimerAction(period=12.0, actions=[gripper, robot_state]),
         TimerAction(period=18.0, actions=[task_manager]),
         TimerAction(period=8.0, actions=[api]),
     ])

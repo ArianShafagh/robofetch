@@ -3,9 +3,9 @@
 <package format="3">
   <name>robofetch_web</name>
   <version>0.1.0</version>
-  <description>Browser dashboard for RoboFetch: order form, live order list, analytics and a
-    warehouse map driven by the /telemetry WebSocket. Served as static files by the FastAPI
-    service in robofetch_bridge, so it needs no build step and no web server of its own.</description>
+  <description>Web UI for RoboFetch: Jinja2 templates and one stylesheet, rendered by the
+    FastAPI service in robofetch_bridge. Server-rendered on purpose - there is no JavaScript
+    in this project, so the pages work anywhere and there is no build step.</description>
   <maintainer email="shafagh.arian2003@gmail.com">robojazzy</maintainer>
   <license>MIT</license>
 

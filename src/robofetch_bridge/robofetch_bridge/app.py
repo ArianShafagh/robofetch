@@ -1,121 +1,94 @@
-"""FastAPI service: the web tier of RoboFetch (proposal 4 and 5.2).
+"""FastAPI service: the web tier of RoboFetch v2 (proposal §5, §9).
 
-REST
-    POST   /orders              submit a delivery order            (UC1)
-    GET    /orders              list orders
-    GET    /orders/{id}         one order's status                 (UC2)
-    DELETE /orders/{id}         cancel an order that is still pending
-    GET    /locations           the waypoint registry              (UC5)
-    POST   /locations           add or update a waypoint           (UC5, admin)
-    DELETE /locations/{name}    remove a waypoint                  (UC5, admin)
-    GET    /analytics           aggregate statistics               (UC6, admin)
-    GET    /robot               last known robot state
+Two faces on the same application:
 
-WebSocket
-    /telemetry                  robot position + order state changes, pushed live (NFR1)
+  HTML pages (server-rendered, no JavaScript anywhere)
+      GET  /            order form                                       UC1
+      POST /preview     cost + accept/refuse verdict, before committing  UC2, UC9
+      POST /confirm     place the order                                  UC3
+      GET  /orders      order history                                    UC4
+      GET  /robot       robot condition                                  UC7
 
-The process owns an rclpy node on a background thread, so an HTTP handler can publish an
-order straight onto a ROS topic. Orders are stored in SQLite first and only then handed
-to the robot: the database is the record of what was asked for, the robot reports back
-what actually happened.
+  REST (same logic, for scripts and the acceptance suite)
+      GET    /api/products            the catalogue
+      GET    /api/delivery-points     destinations
+      POST   /api/preview             {product_id, delivery_id} -> estimate + verdict
+      POST   /api/orders              submit; refuses if admission says no
+      GET    /api/orders[/{id}]       list / track
+      DELETE /api/orders/{id}         cancel a pending order
+      GET    /api/robot               current condition
+      GET    /api/analytics           aggregate statistics                UC6
+      GET    /health                  is this API wired to a robot?
+
+The order of operations matters: an order is admitted BEFORE it is stored, so the database
+never contains a job the robot was never going to attempt. Refused orders are still recorded -
+with status `refused` and the reason - because "what did we turn away" is exactly the kind of
+question the analytics are for.
 """
-import asyncio
 import os
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from robofetch_bridge import admission
 from robofetch_bridge.db import Database
+from robofetch_bridge.predictor import Predictor
 from robofetch_bridge.ros_link import RosThread
 
 DB_PATH = os.environ.get("ROBOFETCH_DB", os.path.expanduser("~/robofetch_ws/robofetch.db"))
 WEB_DIR = os.environ.get("ROBOFETCH_WEB", "")
+AI_URL = os.environ.get("ROBOFETCH_AI_URL", "http://localhost:8001")
 
-app = FastAPI(title="RoboFetch", version="0.1.0")
+app = FastAPI(title="RoboFetch", version="2.0.0")
 db = Database(DB_PATH)
+predictor = Predictor(AI_URL)
+
+templates = Jinja2Templates(directory=os.path.join(WEB_DIR, "templates")) if WEB_DIR else None
 
 
 class OrderRequest(BaseModel):
-    item: str
-    point_a: str        # pickup waypoint NAME, e.g. "shelf_1"
-    point_b: str        # drop-off waypoint NAME, e.g. "delivery_1"
+    product_id: str
+    delivery_id: str
 
 
-class LocationRequest(BaseModel):
-    name: str
-    x: float
-    y: float
-
-
-class Telemetry:
-    """Fan-out of live updates to every connected WebSocket client."""
-
-    def __init__(self):
-        self.clients = set()
-        self.loop = None            # set once FastAPI's event loop is running
-
-    def register_loop(self):
-        self.loop = asyncio.get_running_loop()
-
-    async def connect(self, ws):
-        await ws.accept()
-        self.clients.add(ws)
-
-    def disconnect(self, ws):
-        self.clients.discard(ws)
-
-    def publish(self, message):
-        """Called from the ROS thread, so hop onto the event loop to send."""
-        if self.loop is None or not self.clients:
-            return
-        asyncio.run_coroutine_threadsafe(self._broadcast(message), self.loop)
-
-    async def _broadcast(self, message):
-        dead = []
-        for ws in list(self.clients):
-            try:
-                await ws.send_json(message)
-            except Exception:                                  # noqa: BLE001
-                dead.append(ws)
-        for ws in dead:
-            self.disconnect(ws)
-
-
-telemetry = Telemetry()
+class PreviewRequest(BaseModel):
+    product_id: str
+    delivery_id: str
 
 
 def _on_status(payload):
-    """An order changed state on the robot: persist it, then push it to clients."""
-    db.update_order(payload["id"], status=payload.get("status"),
-                    retries=payload.get("retries"), detail=payload.get("detail"))
-    if payload.get("status") in ("completed", "failed"):
-        order = db.get_order(payload["id"])
-        if order and order.get("completed_at") and order.get("created_at"):
-            db.record_history(order["id"],
-                              duration=order["completed_at"] - order["created_at"],
-                              distance=None, outcome=order["status"])
-    db.update_robot_state(status=payload.get("status"))
-    telemetry.publish({"type": "order", **payload})
+    """An order changed state on the robot: persist it, and close the books when it ends."""
+    order = db.update_order(payload["id"], status=payload.get("status"),
+                            attempts=payload.get("attempts"),
+                            detail=payload.get("detail"))
+    if order and payload.get("status") in ("completed", "failed"):
+        duration = ((order.get("completed_at") or 0) - order["created_at"]) or None
+        db.record_history(
+            order["id"],
+            duration_s=duration,
+            distance_m=order.get("estimated_distance_m"),
+            # Charge the predicted energy only for orders that actually ran to completion;
+            # a failed order did not consume a full delivery's worth.
+            energy_wh=(order.get("estimated_energy_wh")
+                       if payload["status"] == "completed" else None),
+            payload_kg=order.get("weight_kg"),
+            outcome=order["status"])
 
 
-def _on_pose(pose):
-    db.update_robot_state(x=pose["x"], y=pose["y"])
-    telemetry.publish({"type": "pose", **pose})
+def _on_telemetry(sample):
+    """Robot condition arrived: keep the current row fresh and append to the time-series."""
+    db.update_robot_state(**sample)
+    db.record_telemetry(sample)
 
 
-def _on_item(item):
-    """A parcel moved in Gazebo. Not persisted - this is live ground truth, not a record."""
-    telemetry.publish({"type": "item", **item})
-
-
-ros = RosThread(on_status=_on_status, on_pose=_on_pose, on_item=_on_item)
+ros = RosThread(on_status=_on_status, on_telemetry=_on_telemetry)
 
 
 @app.on_event("startup")
 async def _startup():
-    telemetry.register_loop()
     ros.start()
 
 
@@ -124,90 +97,100 @@ async def _shutdown():
     ros.stop()
 
 
-# ----------------------------------------------------------------------- orders
-@app.post("/orders", status_code=201)
-def create_order(request: OrderRequest):
-    """UC1 - submit a delivery order."""
-    try:
-        order = db.create_order(request.item, request.point_a, request.point_b)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+# ------------------------------------------------------------------ admission core
+def _admit(product_id, delivery_id):
+    """Resolve, cost and judge an order. Raises HTTPException for unknown inputs."""
+    product = db.get_product(product_id)
+    if product is None:
+        raise HTTPException(status_code=404, detail=f"unknown product '{product_id}'")
+    delivery = db.get_delivery_point(delivery_id)
+    if delivery is None:
+        raise HTTPException(status_code=404, detail=f"unknown destination '{delivery_id}'")
 
-    pickup = db.get_location(request.point_a)
-    dropoff = db.get_location(request.point_b)
-    # Waypoint names are resolved to coordinates here so the robot side stays numeric.
-    ros.node.submit_order(order["id"], order["item"],
-                          (pickup["x"], pickup["y"]), (dropoff["x"], dropoff["y"]))
+    station = db.get_station()
+    state = db.get_robot_state()
+    decision, reason, decided_by, cost = admission.decide(
+        product, delivery, station, state,
+        robot_xy=ros.node.robot_xy, predictor=predictor)
+    return product, delivery, decision, reason, decided_by, cost
+
+
+# ------------------------------------------------------------------------ REST API
+@app.get("/api/products")
+def api_products():
+    return db.list_products()
+
+
+@app.get("/api/delivery-points")
+def api_delivery_points():
+    return db.list_delivery_points()
+
+
+@app.post("/api/preview")
+def api_preview(request: PreviewRequest):
+    """UC2/UC9 - what would this cost, and would the robot take it?"""
+    product, delivery, decision, reason, decided_by, cost = _admit(
+        request.product_id, request.delivery_id)
+    return {"product": product, "delivery": delivery, "estimate": cost,
+            "decision": decision, "reason": reason, "decided_by": decided_by}
+
+
+@app.post("/api/orders", status_code=201)
+def api_create_order(request: OrderRequest):
+    """UC1/UC3 - submit an order. A refused order is stored, not executed."""
+    product, delivery, decision, reason, decided_by, cost = _admit(
+        request.product_id, request.delivery_id)
+
+    order = db.create_order(request.product_id, request.delivery_id, estimate=cost,
+                            decision=decision, reason=reason, decided_by=decided_by)
+
+    if decision != admission.ACCEPTED:
+        db.update_order(order["id"], status="refused", detail=reason)
+        return db.get_order(order["id"])
 
     # Publishing to a topic nobody subscribes to succeeds silently, so an order sent to a
-    # robot that is not running looks exactly like one that was accepted. The database is
-    # still the record of what was ASKED FOR - so keep the order, but say plainly that it
-    # went nowhere instead of leaving it at 'pending' with an empty detail.
+    # robot that is not running looks exactly like one that worked. Say so instead.
     if ros.node.order_pub.get_subscription_count() == 0:
-        order = db.update_order(
+        return db.update_order(
             order["id"],
             detail="no robot is subscribed to /orders/new - order stored but NOT sent")
 
-    telemetry.publish({"type": "order", **order})
-    return order
+    ros.node.submit_order(order["id"], product,
+                          (product["pick_x"], product["pick_y"]),
+                          (delivery["x"], delivery["y"]))
+    return db.get_order(order["id"])
 
 
-@app.get("/orders")
-def list_orders(status: str = None):
+@app.get("/api/orders")
+def api_list_orders(status: str = None):
     return db.list_orders(status=status)
 
 
-@app.get("/orders/{order_id}")
-def get_order(order_id: int):
-    """UC2 - track one order."""
+@app.get("/api/orders/{order_id}")
+def api_get_order(order_id: int):
     order = db.get_order(order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="no such order")
     return order
 
 
-@app.delete("/orders/{order_id}")
-def cancel_order(order_id: int):
-    """Cancel an order that has not started yet."""
+@app.delete("/api/orders/{order_id}")
+def api_cancel_order(order_id: int):
     order, error = db.cancel_order(order_id)
     if order is None:
         raise HTTPException(status_code=404, detail=error)
     if error:
         raise HTTPException(status_code=409, detail=error)
-    telemetry.publish({"type": "order", **order})
     return order
 
 
-# -------------------------------------------------------------------- locations
-@app.get("/locations")
-def list_locations():
-    return db.list_locations()
+@app.get("/api/robot")
+def api_robot():
+    return db.get_robot_state()
 
 
-@app.post("/locations", status_code=201)
-def upsert_location(request: LocationRequest):
-    """UC5 - the administrator maintains the waypoint registry."""
-    return db.upsert_location(request.name, request.x, request.y)
-
-
-@app.delete("/locations/{name}")
-def delete_location(name: str):
-    if not db.delete_location(name):
-        raise HTTPException(status_code=404, detail="no such location")
-    return {"deleted": name}
-
-
-# --------------------------------------------------------------- state & analytics
-@app.get("/robot")
-def robot_state():
-    state = db.get_robot_state()
-    state.update(ros.node.robot_pose)      # freshest position, straight from AMCL
-    return state
-
-
-@app.get("/analytics")
-def analytics():
-    """UC6 - aggregate delivery statistics."""
+@app.get("/api/analytics")
+def api_analytics():
     return db.analytics()
 
 
@@ -215,14 +198,10 @@ def analytics():
 def health():
     """Is this API actually wired to a robot?
 
-    "I submitted an order and nothing happened" has several causes that look identical
-    from the client: the order comes back as valid JSON either way. The most confusing is
-    a STALE api left holding port 8000 - it serves HTTP perfectly while being connected to
-    a different database and no running robot, so the real launch's API silently died with
-    "address already in use" and every order disappears into the old process.
-
-    The live subscriber count on /orders/new distinguishes them in one request: it is
-    non-zero only when a task manager is really listening to THIS process.
+    "I submitted an order and nothing happened" has several causes that look identical from
+    the client. The most confusing is a STALE api left holding port 8000: it serves HTTP
+    perfectly while connected to a different database and no running robot. The live
+    subscriber count on /orders/new distinguishes them in one request.
     """
     subscribers = ros.node.order_pub.get_subscription_count()
     return {
@@ -230,49 +209,65 @@ def health():
         "database": DB_PATH,
         "robot_connected": subscribers > 0,
         "orders_new_subscribers": subscribers,
+        "ai_service": predictor.status(),
     }
 
 
-# ------------------------------------------------------------------- telemetry
-@app.websocket("/telemetry")
-async def telemetry_socket(ws: WebSocket):
-    """Live robot position and order updates (NFR1: within 1 s of a change)."""
-    await telemetry.connect(ws)
-    try:
-        # One snapshot on connect means the page renders a complete picture immediately,
-        # instead of staying blank until the next thing happens to change.
-        await ws.send_json({"type": "snapshot",
-                            "orders": db.list_orders(),
-                            "robot": db.get_robot_state(),
-                            "locations": db.list_locations(),
-                            "items": ros.node.item_poses})
-        while True:
-            await ws.receive_text()        # kept open; clients need not send anything
-    except WebSocketDisconnect:
-        telemetry.disconnect(ws)
-    except Exception:                                          # noqa: BLE001
-        telemetry.disconnect(ws)
+# --------------------------------------------------------------------- HTML pages
+def _page_context(request):
+    return {"request": request, "robot": db.get_robot_state()}
 
 
-# The dashboard (M8) is served from here when the directory exists.
-if WEB_DIR and os.path.isdir(WEB_DIR):
-    # follow_symlink=True is REQUIRED here, not optional tidiness.
-    #
-    # We build with `colcon build --symlink-install`, which installs every file in
-    # share/robofetch_web/web as a SYMLINK back to src/. Starlette's StaticFiles defaults
-    # to resolving each request through os.path.realpath and rejecting anything that lands
-    # outside the mounted directory - a sensible guard against path traversal, but it also
-    # rejects our symlinks, because their real paths live in src/.
-    #
-    # The failure is quietly misleading: "/" still works (FileResponse does no such check)
-    # so the page loads, while every /app/*.css and /app/*.js returns 404 - a completely
-    # unstyled, non-functioning dashboard that looks like a frontend bug.
-    app.mount("/app", StaticFiles(directory=WEB_DIR, html=True, follow_symlink=True),
-              name="web")
+@app.get("/", response_class=HTMLResponse)
+def page_order_form(request: Request):
+    context = _page_context(request)
+    context.update(products=db.list_products(),
+                   deliveries=db.list_delivery_points())
+    return templates.TemplateResponse(request, "order.html", context)
 
-    @app.get("/")
-    def index():
-        return FileResponse(os.path.join(WEB_DIR, "index.html"))
+
+@app.post("/preview", response_class=HTMLResponse)
+def page_preview(request: Request, product_id: str = Form(...),
+                 delivery_id: str = Form(...)):
+    """UC2 - the verdict is shown BEFORE the order is committed."""
+    product, delivery, decision, reason, decided_by, cost = _admit(product_id, delivery_id)
+    context = _page_context(request)
+    context.update(product=product, delivery=delivery, estimate=cost,
+                   decision=decision, reason=reason, decided_by=decided_by,
+                   accepted=decision == admission.ACCEPTED)
+    return templates.TemplateResponse(request, "preview.html", context)
+
+
+@app.post("/confirm")
+def page_confirm(product_id: str = Form(...), delivery_id: str = Form(...)):
+    api_create_order(OrderRequest(product_id=product_id, delivery_id=delivery_id))
+    return RedirectResponse("/orders", status_code=303)
+
+
+@app.get("/orders", response_class=HTMLResponse)
+def page_orders(request: Request):
+    context = _page_context(request)
+    context.update(orders=list(reversed(db.list_orders())),
+                   stats=db.analytics())
+    return templates.TemplateResponse(request, "orders.html", context)
+
+
+@app.get("/robot", response_class=HTMLResponse)
+def page_robot(request: Request):
+    context = _page_context(request)
+    context.update(stats=db.analytics(), telemetry=db.list_telemetry(limit=20),
+                   ai=predictor.status())
+    return templates.TemplateResponse(request, "robot.html", context)
+
+
+# Static CSS. Templates are rendered above; only the stylesheet is served as a file.
+if WEB_DIR and os.path.isdir(os.path.join(WEB_DIR, "static")):
+    # follow_symlink=True is REQUIRED: colcon --symlink-install installs these as symlinks
+    # back into src/, and StaticFiles rejects anything whose real path leaves the mounted
+    # directory. Without it every stylesheet request 404s while the pages still render.
+    app.mount("/static",
+              StaticFiles(directory=os.path.join(WEB_DIR, "static"), follow_symlink=True),
+              name="static")
 
 
 def main():

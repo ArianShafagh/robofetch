@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}RoboFetch{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <strong>RoboFetch</strong>
+    <span class="muted">warehouse delivery</span>
+  </div>
+  <nav>
+    <a href="/">New order</a>
+    <a href="/orders">Orders</a>
+    <a href="/robot">Robot</a>
+  </nav>
+  {# A compact condition readout on every page: the operator needs to know the robot is
+     healthy before wondering why an order was refused. Position is deliberately absent. #}
+  <div class="status">
+    <span class="pill {{ 'ok' if (robot.battery_percent or 0) > 30 else 'bad' }}">
+      {{ '%.0f'|format(robot.battery_percent or 0) }}% battery
+    </span>
+    <span class="pill {{ 'warn' if (robot.temperature_c or 0) > 55 else '' }}">
+      {{ '%.0f'|format(robot.temperature_c or 0) }} &deg;C
+    </span>
+    <span class="pill">{{ robot.state or 'unknown' }}</span>
+  </div>
+</header>
+
+<main>
+{% block content %}{% endblock %}
+</main>
+
+<footer class="muted">
+  RoboFetch &middot; ROS 2 Jazzy + Gazebo Harmonic &middot; pages are server-rendered, no JavaScript
+</footer>
+
+</body>
+</html>

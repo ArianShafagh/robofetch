@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Robot &middot; RoboFetch{% endblock %}
+
+{% block content %}
+<h1>Robot condition</h1>
+<p class="muted">
+  Battery, temperature and mechanical condition all feed the accept/refuse decision. The
+  robot's position is deliberately not shown &mdash; this page is about whether it is fit to
+  work, not where it is.
+</p>
+
+<div class="tiles">
+  <div class="tile">
+    <span class="value {{ 'ok' if (robot.battery_percent or 0) > 30 else 'bad' }}">
+      {{ '%.0f'|format(robot.battery_percent or 0) }}%</span>
+    <span class="label">battery</span>
+  </div>
+  <div class="tile">
+    <span class="value {{ 'bad' if (robot.temperature_c or 0) >= 70
+                          else ('warn' if (robot.temperature_c or 0) > 55 else '') }}">
+      {{ '%.1f'|format(robot.temperature_c or 0) }} &deg;C</span>
+    <span class="label">motor temperature</span>
+  </div>
+  <div class="tile">
+    <span class="value {{ 'bad' if (robot.condition_percent or 100) < 30 else '' }}">
+      {{ '%.1f'|format(robot.condition_percent or 100) }}%</span>
+    <span class="label">condition</span>
+  </div>
+  <div class="tile"><span class="value">{{ robot.state or 'unknown' }}</span>
+    <span class="label">duty state</span></div>
+  <div class="tile"><span class="value">{{ '%.1f'|format(robot.payload_kg or 0) }} kg</span>
+    <span class="label">payload</span></div>
+  <div class="tile">
+    <span class="value">{{ '%.0f'|format(robot.cumulative_distance_m or 0) }} m</span>
+    <span class="label">distance travelled</span></div>
+</div>
+
+<div class="columns">
+  <section class="card">
+    <h2>Prediction service</h2>
+    <dl>
+      <dt>Endpoint</dt><dd class="mono small">{{ ai.url }}</dd>
+      <dt>Reachable</dt>
+      <dd>
+        {% if ai.reachable %}<span class="status s-completed">yes</span>
+        {% elif ai.reachable is none %}<span class="status">not called yet</span>
+        {% else %}<span class="status s-failed">no</span>{% endif %}
+      </dd>
+      {% if ai.error %}<dt>Last error</dt><dd class="muted small">{{ ai.error }}</dd>{% endif %}
+    </dl>
+    <p class="muted small">
+      If this is unreachable the system keeps working: admission control falls back to the
+      deterministic energy model and records the decision as made by policy alone.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>Delivery statistics</h2>
+    <dl>
+      <dt>Completed</dt><dd>{{ stats.completed }} of {{ stats.total_orders }}</dd>
+      <dt>Refused</dt><dd>{{ stats.refused }}</dd>
+      <dt>Average energy</dt>
+      <dd>{{ stats.average_energy_wh ~ ' Wh' if stats.average_energy_wh else '-' }}</dd>
+      <dt>Total energy</dt>
+      <dd>{{ stats.total_energy_wh ~ ' Wh' if stats.total_energy_wh else '-' }}</dd>
+    </dl>
+  </section>
+</div>
+
+<h2>Recent telemetry</h2>
+<p class="muted small">
+  Sampled once per second and written to a per-run CSV, which is the training input for the
+  feasibility model.
+</p>
+<div class="scroll">
+<table>
+  <thead>
+    <tr><th>State</th><th class="num">Battery</th><th class="num">Temp.</th>
+        <th class="num">Condition</th><th class="num">Payload</th><th class="num">Speed</th></tr>
+  </thead>
+  <tbody>
+    {% for t in telemetry %}
+      <tr>
+        <td>{{ t.state }}</td>
+        <td class="num">{{ '%.1f'|format(t.battery_percent or 0) }}%</td>
+        <td class="num">{{ '%.1f'|format(t.temperature_c or 0) }}</td>
+        <td class="num">{{ '%.2f'|format(t.condition_percent or 0) }}%</td>
+        <td class="num">{{ '%.1f'|format(t.payload_kg or 0) }}</td>
+        <td class="num">{{ '%.2f'|format(t.speed or 0) }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="empty">No telemetry yet &mdash; is the simulation running?</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

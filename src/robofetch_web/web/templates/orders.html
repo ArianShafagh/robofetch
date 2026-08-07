@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Orders &middot; RoboFetch{% endblock %}
+
+{% block content %}
+<h1>Orders</h1>
+
+<div class="tiles">
+  <div class="tile"><span class="value">{{ stats.total_orders }}</span><span class="label">total</span></div>
+  <div class="tile"><span class="value ok">{{ stats.completed }}</span><span class="label">delivered</span></div>
+  <div class="tile"><span class="value bad">{{ stats.failed }}</span><span class="label">failed</span></div>
+  <div class="tile"><span class="value">{{ stats.refused }}</span><span class="label">refused</span></div>
+  <div class="tile"><span class="value">
+    {{ '%.0f%%'|format(stats.success_rate * 100) if stats.success_rate is not none else '-' }}
+  </span><span class="label">success rate</span></div>
+  <div class="tile"><span class="value">
+    {{ stats.average_delivery_seconds if stats.average_delivery_seconds else '-' }}{{ 's' if stats.average_delivery_seconds }}
+  </span><span class="label">avg. delivery</span></div>
+</div>
+
+<p class="muted small">
+  This page is a snapshot &mdash; reload it to see progress.
+</p>
+
+<div class="scroll">
+<table>
+  <thead>
+    <tr>
+      <th>#</th><th>Product</th><th>Destination</th><th>Status</th>
+      <th class="num">Tries</th><th class="num">Est.</th><th>Detail</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for o in orders %}
+      <tr>
+        <td class="num">{{ o.id }}</td>
+        <td>
+          <span class="mono">{{ o.product_id }}</span>
+          <span class="muted small">{{ o.product_name }}</span>
+        </td>
+        <td class="muted">{{ o.delivery_name or o.delivery_id }}</td>
+        <td><span class="status s-{{ o.status }}">{{ o.status }}</span></td>
+        <td class="num">{{ o.attempts or '-' }}</td>
+        <td class="num muted small">
+          {% if o.estimated_energy_wh %}{{ '%.1f'|format(o.estimated_energy_wh) }} Wh{% else %}-{% endif %}
+        </td>
+        <td class="muted small">{{ o.detail or o.decision_reason or '' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="empty">No orders yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

@@ -54,7 +54,7 @@ def generate_launch_description():
             "-topic", "/robot_description",
             "-name", "robofetch",
             # Robot starts parked on the delivery station facing +x (into the room).
-            "-x", "-2.6", "-y", "-2.0", "-z", "0.1", "-Y", "0.0",
+            "-x", "0.0", "-y", "-2.2", "-z", "0.1", "-Y", "0.0",   # station_1
         ],
     )
 

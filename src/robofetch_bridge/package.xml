@@ -12,6 +12,14 @@
 
   <test_depend>python3-pytest</test_depend>
 
+  <!-- admission.py imports robofetch_core.robot_model: the condition model is
+       shared between the web tier, the robot node and the ML data generator so
+       there is exactly one definition of the physics. -->
+  <exec_depend>robofetch_core</exec_depend>
+  <exec_depend>python3-jinja2</exec_depend>
+  <!-- FastAPI needs this to parse the HTML form posts. -->
+  <exec_depend>python3-multipart</exec_depend>
+
   <export>
     <build_type>ament_python</build_type>
   </export>

@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = "robofetch_core"
+package_name = "robofetch_ai"
 
 setup(
     name=package_name,
@@ -10,18 +10,19 @@ setup(
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
     ],
+    # The trained model ships inside the package so the service is self-contained.
+    package_data={package_name: ["models/*.joblib"]},
+    include_package_data=True,
     install_requires=["setuptools"],
     zip_safe=True,
     maintainer="robojazzy",
     maintainer_email="shafagh.arian2003@gmail.com",
-    description="RoboFetch custom logic: gripper, task manager, scheduler, retry FSM.",
+    description="Order feasibility prediction service for RoboFetch.",
     license="MIT",
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "gripper_node = robofetch_core.gripper_node:main",
-            "task_manager = robofetch_core.task_manager:main",
-            "robot_state_node = robofetch_core.robot_state_node:main",
+            "ai_service = robofetch_ai.service:main",
         ],
     },
 )

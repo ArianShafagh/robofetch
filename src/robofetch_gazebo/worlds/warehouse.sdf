@@ -125,18 +125,45 @@
         <material><ambient>0.55 0.35 0.15 1</ambient><diffuse>0.55 0.35 0.15 1</diffuse></material></visual>
     </link></model>
 
-    <!-- ===================== Delivery station (south-west) =====================
-         Visual only - a floor marking, so it never blocks the robot or the planner. -->
-    <model name="delivery_station"><static>true</static><pose>-2.6 -2.0 0.005 0 0 0</pose><link name="l">
-      <visual name="v"><geometry><box><size>1.6 1.2 0.01</size></box></geometry>
+    <!-- =============== Delivery bays and the robot station ===============
+         Floor markings only, never obstacles. The two bays sit in OPPOSITE corners: parcels
+         are 0.09 m cubes, below the 0.13 m lidar and therefore invisible to Nav2, so putting
+         deliveries close together builds a pile of obstacles the robot cannot see. The
+         station is deliberately somewhere else again - the robot goes home there when idle
+         and charges, which must not put it on top of a delivered parcel. -->
+
+    <!-- delivery_1 - south-west bay -->
+    <model name="delivery_1"><static>true</static><pose>-3.0 -2.2 0.005 0 0 0</pose><link name="l">
+      <visual name="v"><geometry><box><size>1.2 1.0 0.01</size></box></geometry>
         <material><ambient>0.1 0.6 0.2 1</ambient><diffuse>0.1 0.6 0.2 1</diffuse></material></visual>
     </link></model>
 
+    <!-- delivery_2 - south-east bay, 5.6 m away -->
+    <model name="delivery_2"><static>true</static><pose>2.6 -2.2 0.005 0 0 0</pose><link name="l">
+      <visual name="v"><geometry><box><size>1.2 1.0 0.01</size></box></geometry>
+        <material><ambient>0.1 0.6 0.2 1</ambient><diffuse>0.1 0.6 0.2 1</diffuse></material></visual>
+    </link></model>
+
+    <!-- station_1 - home and charging point -->
+    <model name="station_1"><static>true</static><pose>0.0 -2.2 0.005 0 0 0</pose><link name="l">
+      <visual name="v"><geometry><box><size>0.9 0.9 0.01</size></box></geometry>
+        <material><ambient>0.15 0.35 0.75 1</ambient><diffuse>0.15 0.35 0.75 1</diffuse></material></visual>
+    </link></model>
+
     <!-- ===================== Parcels =====================
-         0.09 m cubes: BELOW the 0.13 m lidar, so a carried parcel is never mistaken for
-         an obstacle. Each sits just in front of its shelf. -->
-    <model name="item_1">
-      <pose>-2.5 1.35 0.05 0 0 0</pose>
+         0.09 m cubes: BELOW the 0.13 m lidar, so a carried parcel is never mistaken for an
+         obstacle. Two per shelf, ~1 m apart, each just in front of its own pick point.
+         They are carried on the floor, NOT lifted - lifting one into the laser plane would
+         make the robot see an obstacle directly in front of itself and refuse to move - so
+         the spacing is what stops them knocking into each other.
+         Near-zero friction (mu 0.02) is load-bearing: at normal friction a dragged parcel
+         resists enough for Nav2's progress checker to abort the goal.
+         PosePublisher runs at 5 Hz, not 20: all of these feed the gripper node's single
+         rclpy executor, and at 20 Hz the combined callback rate wedged it completely. -->
+
+    <!-- SKU-1001 bearing set,   shelf_1 west -->
+    <model name="parcel_1">
+      <pose>-3.0 1.35 0.05 0 0 0</pose>
       <link name="link">
         <collision name="c"><geometry><box><size>0.09 0.09 0.09</size></box></geometry>
           <surface><friction><ode><mu>0.02</mu><mu2>0.02</mu2></ode></friction></surface>
@@ -154,19 +181,13 @@
         <publish_model_pose>true</publish_model_pose>
         <use_pose_vector_msg>false</use_pose_vector_msg>
         <static_publisher>false</static_publisher>
-        <!-- 5 Hz, not 20. Four of these publishers (robot + three parcels) all feed the
-             gripper node's rclpy MultiThreadedExecutor, and at 20 Hz the ~70 callbacks/s
-             saturated it: the executor's main thread spun holding the GIL and the node
-             stopped dispatching ANYTHING - grab requests and even parameter queries hung
-             forever while the process sat at 96%% CPU. 5 Hz is ample for the gripper's
-             gap check and the dashboard map. Geometry is unchanged, so the map does NOT
-             need regenerating. -->
         <update_frequency>5</update_frequency>
       </plugin>
     </model>
 
-    <model name="item_2">
-      <pose>1.5 1.35 0.05 0 0 0</pose>
+    <!-- SKU-1002 seal kit,      shelf_1 east -->
+    <model name="parcel_2">
+      <pose>-2.0 1.35 0.05 0 0 0</pose>
       <link name="link">
         <collision name="c"><geometry><box><size>0.09 0.09 0.09</size></box></geometry>
           <surface><friction><ode><mu>0.02</mu><mu2>0.02</mu2></ode></friction></surface>
@@ -184,19 +205,13 @@
         <publish_model_pose>true</publish_model_pose>
         <use_pose_vector_msg>false</use_pose_vector_msg>
         <static_publisher>false</static_publisher>
-        <!-- 5 Hz, not 20. Four of these publishers (robot + three parcels) all feed the
-             gripper node's rclpy MultiThreadedExecutor, and at 20 Hz the ~70 callbacks/s
-             saturated it: the executor's main thread spun holding the GIL and the node
-             stopped dispatching ANYTHING - grab requests and even parameter queries hung
-             forever while the process sat at 96%% CPU. 5 Hz is ample for the gripper's
-             gap check and the dashboard map. Geometry is unchanged, so the map does NOT
-             need regenerating. -->
         <update_frequency>5</update_frequency>
       </plugin>
     </model>
 
-    <model name="item_3">
-      <pose>3.15 -1.0 0.05 0 0 0</pose>
+    <!-- SKU-2001 servo drive,   shelf_2 west -->
+    <model name="parcel_3">
+      <pose>1.05 1.35 0.05 0 0 0</pose>
       <link name="link">
         <collision name="c"><geometry><box><size>0.09 0.09 0.09</size></box></geometry>
           <surface><friction><ode><mu>0.02</mu><mu2>0.02</mu2></ode></friction></surface>
@@ -214,13 +229,78 @@
         <publish_model_pose>true</publish_model_pose>
         <use_pose_vector_msg>false</use_pose_vector_msg>
         <static_publisher>false</static_publisher>
-        <!-- 5 Hz, not 20. Four of these publishers (robot + three parcels) all feed the
-             gripper node's rclpy MultiThreadedExecutor, and at 20 Hz the ~70 callbacks/s
-             saturated it: the executor's main thread spun holding the GIL and the node
-             stopped dispatching ANYTHING - grab requests and even parameter queries hung
-             forever while the process sat at 96%% CPU. 5 Hz is ample for the gripper's
-             gap check and the dashboard map. Geometry is unchanged, so the map does NOT
-             need regenerating. -->
+        <update_frequency>5</update_frequency>
+      </plugin>
+    </model>
+
+    <!-- SKU-2002 cable harness, shelf_2 east -->
+    <model name="parcel_4">
+      <pose>1.95 1.35 0.05 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>0.09 0.09 0.09</size></box></geometry>
+          <surface><friction><ode><mu>0.02</mu><mu2>0.02</mu2></ode></friction></surface>
+        </collision>
+        <visual name="v"><geometry><box><size>0.09 0.09 0.09</size></box></geometry>
+          <material><ambient>0.2 0.7 0.4 1</ambient><diffuse>0.2 0.7 0.4 1</diffuse></material></visual>
+        <inertial><mass>0.2</mass>
+          <inertia><ixx>0.00027</ixx><iyy>0.00027</iyy><izz>0.00027</izz>
+                   <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+      </link>
+      <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_collision_pose>false</publish_collision_pose>
+        <publish_visual_pose>false</publish_visual_pose>
+        <publish_model_pose>true</publish_model_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <static_publisher>false</static_publisher>
+        <update_frequency>5</update_frequency>
+      </plugin>
+    </model>
+
+    <!-- SKU-3001 battery pack,  shelf_3 south -->
+    <model name="parcel_5">
+      <pose>3.15 -1.5 0.05 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>0.09 0.09 0.09</size></box></geometry>
+          <surface><friction><ode><mu>0.02</mu><mu2>0.02</mu2></ode></friction></surface>
+        </collision>
+        <visual name="v"><geometry><box><size>0.09 0.09 0.09</size></box></geometry>
+          <material><ambient>0.9 0.2 0.2 1</ambient><diffuse>0.9 0.2 0.2 1</diffuse></material></visual>
+        <inertial><mass>0.2</mass>
+          <inertia><ixx>0.00027</ixx><iyy>0.00027</iyy><izz>0.00027</izz>
+                   <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+      </link>
+      <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_collision_pose>false</publish_collision_pose>
+        <publish_visual_pose>false</publish_visual_pose>
+        <publish_model_pose>true</publish_model_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <static_publisher>false</static_publisher>
+        <update_frequency>5</update_frequency>
+      </plugin>
+    </model>
+
+    <!-- SKU-3002 sensor module, shelf_3 north -->
+    <model name="parcel_6">
+      <pose>3.15 -0.5 0.05 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>0.09 0.09 0.09</size></box></geometry>
+          <surface><friction><ode><mu>0.02</mu><mu2>0.02</mu2></ode></friction></surface>
+        </collision>
+        <visual name="v"><geometry><box><size>0.09 0.09 0.09</size></box></geometry>
+          <material><ambient>0.9 0.9 0.2 1</ambient><diffuse>0.9 0.9 0.2 1</diffuse></material></visual>
+        <inertial><mass>0.2</mass>
+          <inertia><ixx>0.00027</ixx><iyy>0.00027</iyy><izz>0.00027</izz>
+                   <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+      </link>
+      <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_collision_pose>false</publish_collision_pose>
+        <publish_visual_pose>false</publish_visual_pose>
+        <publish_model_pose>true</publish_model_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <static_publisher>false</static_publisher>
         <update_frequency>5</update_frequency>
       </plugin>
     </model>
