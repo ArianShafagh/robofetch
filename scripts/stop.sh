@@ -6,7 +6,13 @@
 # confusing errors. Run this whenever a launch was killed uncleanly.
 #
 #   ./scripts/stop.sh
-PATTERN='gz|ruby|rviz2|gripper_node|task_manager|robot_state_pub|parameter_bridg|map_server|amcl|lifecycle_manag|controller_serv|smoother_server|planner_server|behavior_server|bt_navigator|waypoint_follow|velocity_smooth|collision_monit|opennav_docking|ros2'
+# NOTE: `ps -o comm` truncates to 15 characters, so these must be matched as PREFIXES of the
+# truncated name, not as full executable names. `robot_state` deliberately covers BOTH
+# `robot_state_publisher` -> "robot_state_pub" and `robot_state_node` -> "robot_state_nod".
+# Listing only the former is how five orphaned condition monitors accumulated across restarts,
+# each still publishing /robot/telemetry, so the web tier saw battery and temperature readings
+# jumping between several stale robots at once.
+PATTERN='gz|ruby|rviz2|gripper_node|task_manager|robot_state|parameter_bridg|map_server|amcl|lifecycle_manag|controller_serv|smoother_server|planner_server|behavior_server|bt_navigator|waypoint_follow|velocity_smooth|collision_monit|opennav_docking|ros2'
 
 # BOTH web services run as `python -m uvicorn robofetch_<something>`, so their process NAME is
 # just "python" - far too generic to put in PATTERN without killing unrelated work. They have

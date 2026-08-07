@@ -464,6 +464,14 @@ without its model. Found one orphan 37 minutes old. The pattern is now `uvicorn 
 rather than a list of names, so a service added later is covered without anyone remembering to
 update it, and `run.sh` pre-flights **both** ports.
 
+**`ps -o comm` truncates process names to 15 characters**, and `stop.sh` matches against that
+truncated form. v2's condition monitor is `robot_state_node` -> `robot_state_nod`, which the
+existing `robot_state_pub` entry (for `robot_state_publisher`) does NOT match, so it survived
+every stop. Five accumulated across restarts, each still publishing `/robot/telemetry`, so the
+web tier was reading battery and temperature from several stale robots at once - exactly the
+kind of fault that looks like a broken sensor model rather than a leftover process. The entry is
+now the prefix `robot_state`, which covers both.
+
 **colcon does not delete files you removed from source.** Replacing the v1 dashboard left
 `index.html`, `app.js` and `style.css` behind in `install/robofetch_web/share/.../web/` as
 DANGLING symlinks pointing at files that no longer exist. Harmless here, but the general fix when
