@@ -62,6 +62,7 @@ below, and add them with the same macro the other figures use:
 | `shot-robot-page.png` | The robot condition page | Chapter 8 |
 | `shot-order-script.png` | A terminal running `./scripts/order.sh`, showing the verdict and the ground-truth check at the end | Chapter 12, Testing |
 | `shot-acceptance.png` | A terminal showing the acceptance suite output, 15/15 | Chapter 12 |
+| `shot-launch.png` | The launch terminal at the moment it reports the robot is localized and ready | Chapter 13, Development Environment |
 
 To get the **refused** preview, order the heaviest product (`SKU-3001`) repeatedly until the
 battery falls below the reserve — the refusal message explains itself, which is what makes it a
@@ -107,13 +108,15 @@ Three ways to edit:
 | `04-state-duty-cycle.puml` | Robot duty cycle | States and transitions labelled with their trigger condition |
 | `05-activity-admission.puml` | Admission workflow | Actions and decision nodes; the branch order is the point of the diagram |
 | `06-er-diagram.puml` | Database, conceptual | Crow's-foot cardinality |
-| `07-database-class.puml` | Database, structural | `<<table>>` stereotype, `<<PK>>`/`<<FK>>`, associations with multiplicities |
+| `07-database-class.puml` | Database, structural (**not currently used** — see note) | `<<table>>` stereotype, `<<PK>>`/`<<FK>>`, associations with multiplicities |
 | `08-component.puml` | Components | Packages, components, dependency arrows |
 | `09-deployment.puml` | Deployment | Nodes as processes, artifacts inside them |
 
-Two views of the database are included on purpose. The class diagram shows the *structure* —
-columns, types, keys. The ER diagram shows the *concepts* and their cardinality. The report
-explains why both are given.
+The report uses the **ER diagram** for the database, since it shows the columns, the keys and the
+cardinalities in one readable picture. The UML class version of the same schema is still available
+as `07-database-class.puml` and renders to `Figures/07-database-class.png` if you ever want it —
+just add an `\uploadedfigure` line for it. The same applies to `fig-category-balance.png`, which is
+generated but no longer referenced.
 
 ---
 
@@ -133,7 +136,8 @@ Useful if you are asked to walk through a section and want to open the code besi
 | 10 Complex functionality | `robot_model.py`, `admission.py`, `task_manager.py` |
 | 11 Machine learning | `tools/ml/`, `src/robofetch_ai/robofetch_ai/service.py` |
 | 12 Testing | `src/*/test/`, `scripts/acceptance.py` |
-| 14 Limitations | `HANDOVER.md` section 7 |
+| 13 Environment and challenges | `HANDOVER.md` sections 2 and 5 |
+| 15 Limitations | `HANDOVER.md` section 7 |
 
 ---
 
