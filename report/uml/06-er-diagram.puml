@@ -1,0 +1,110 @@
+' =====================================================================
+' RoboFetch - Entity relationship diagram
+' The conceptual view of the same nine tables shown in the database
+' class diagram (07_database_class.puml).
+' =====================================================================
+@startuml
+skinparam backgroundColor White
+skinparam shadowing false
+skinparam linetype ortho
+hide circle
+hide empty methods
+
+title RoboFetch Entity-Relationship Diagram
+
+entity "SHELVES" as shelves {
+  * shelf_id : TEXT <<PK>>
+  --
+  centre_x : REAL
+  centre_y : REAL
+}
+
+entity "PICK_POINTS" as picks {
+  * pick_point_id : TEXT <<PK>>
+  --
+  * shelf_id : TEXT <<FK>>
+  x : REAL
+  y : REAL
+}
+
+entity "DELIVERY_POINTS" as bays {
+  * delivery_id : TEXT <<PK>>
+  --
+  name : TEXT
+  x : REAL
+  y : REAL
+}
+
+entity "STATION" as station {
+  * station_id : TEXT <<PK>>
+  --
+  x : REAL
+  y : REAL
+}
+
+entity "PRODUCTS" as products {
+  * product_id : TEXT <<PK>>
+  --
+  name : TEXT
+  category : TEXT
+  weight_kg : REAL
+  stock : INTEGER
+  shelf_id : TEXT <<FK>>
+  pick_point_id : TEXT <<FK>>
+  model_name : TEXT
+}
+
+entity "ORDERS" as orders {
+  * id : INTEGER <<PK>>
+  --
+  product_id : TEXT <<FK>>
+  delivery_id : TEXT <<FK>>
+  status : TEXT
+  attempts : INTEGER
+  estimated_energy_wh : REAL
+  decision : TEXT
+  decided_by : TEXT
+  created_at : REAL
+  completed_at : REAL
+}
+
+entity "DELIVERY_HISTORY" as history {
+  * order_id : INTEGER <<PK,FK>>
+  --
+  duration_s : REAL
+  distance_m : REAL
+  energy_wh : REAL
+  payload_kg : REAL
+  outcome : TEXT
+}
+
+entity "ROBOT_TELEMETRY" as telemetry {
+  * id : INTEGER <<PK>>
+  --
+  ts : REAL
+  run_id : TEXT
+  battery_percent : REAL
+  temperature_c : REAL
+  condition_percent : REAL
+  payload_kg : REAL
+  state : TEXT
+}
+
+entity "ROBOT_STATE" as state {
+  * id : INTEGER <<PK>>
+  --
+  battery_percent : REAL
+  temperature_c : REAL
+  condition_percent : REAL
+  state : TEXT
+  last_update : REAL
+}
+
+shelves ||--|{ picks : "holds"
+shelves ||--o{ products : "stores"
+picks ||--o| products : "gives access to"
+products ||--o{ orders : "is requested in"
+bays ||--o{ orders : "receives"
+orders ||--o| history : "is recorded as"
+
+@enduml

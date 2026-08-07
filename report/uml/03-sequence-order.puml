@@ -1,0 +1,75 @@
+' =====================================================================
+' RoboFetch - Sequence diagram: an order from request to verified delivery
+' Shows the admission decision BEFORE the order is stored, and the
+' ground-truth verification before it is reported complete.
+' =====================================================================
+@startuml
+skinparam backgroundColor White
+skinparam shadowing false
+skinparam sequence {
+  ArrowColor #34495E
+  LifeLineBorderColor #7F8C8D
+  ParticipantBorderColor #34495E
+  ParticipantBackgroundColor #FBFCFE
+}
+
+title Order Lifecycle: request to verified delivery
+
+actor Client
+participant "Web tier\n(FastAPI)" as API
+database "SQLite" as DB
+participant "AI service\n(classifier)" as AI
+participant "Task manager" as TM
+participant "Nav2" as NAV
+participant "Gripper" as GR
+participant "Gazebo" as GZ
+
+== Admission (before anything is stored) ==
+Client -> API : POST /preview {product_id, delivery_id}
+API -> DB : look up product and destination
+DB --> API : weight, pick point, bay
+API -> API : compute 3-leg route,\nestimate energy,\nsimulate peak temperature
+API -> DB : read current robot condition
+API -> AI : POST /predict {battery, temp,\ncondition, payload, distance}
+AI --> API : feasible, confidence
+API -> API : apply policy gates\n(stock, reserve, thermal, condition)
+API --> Client : cost estimate + ACCEPT / REFUSE + reason
+
+== Confirmation ==
+Client -> API : POST /confirm
+API -> DB : create order (with the estimate)
+API -> TM : publish /orders/new
+
+== Execution ==
+TM -> API : /orders/status navigating
+TM -> NAV : NavigateToPose(pick point)
+NAV -> GZ : /cmd_vel
+NAV --> TM : SUCCEEDED
+
+loop up to 3 attempts
+  TM -> GR : grab(model)
+  GR -> GZ : publish attach
+  GZ --> GR : joint state "attached"
+  GR --> TM : success / failure
+end
+
+TM -> API : /orders/status delivering
+TM -> NAV : NavigateToPose(delivery bay)
+NAV --> TM : SUCCEEDED
+TM -> GR : release(model)
+GR -> GZ : publish detach
+
+== Verification ==
+TM -> GZ : read parcel world pose
+GZ --> TM : (x, y)
+note right of TM
+  The parcel's real position decides
+  the outcome, not the fact that every
+  command returned success.
+end note
+TM -> API : /orders/status completed
+API -> DB : update order + delivery history
+Client -> API : GET /orders
+API --> Client : history page
+
+@enduml

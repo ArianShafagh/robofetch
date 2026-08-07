@@ -1,0 +1,1607 @@
+\documentclass[12pt,a4paper]{report}
+
+% RoboFetch - Software Engineering Report
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{mathpazo}
+\usepackage{inconsolata}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{setspace}
+\usepackage{graphicx}
+\graphicspath{{Figures/}{figures/}}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{titlesec}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\setlist{itemsep=2pt, topsep=4pt}
+\setlist[enumerate]{leftmargin=1.6em}
+\renewcommand{\arraystretch}{1.25}
+
+\definecolor{codegreen}{rgb}{0.2,0.55,0.2}
+\definecolor{codegray}{rgb}{0.45,0.45,0.45}
+\definecolor{codepurple}{rgb}{0.5,0.0,0.7}
+\definecolor{backcolour}{rgb}{0.97,0.97,0.98}
+\definecolor{framerule}{rgb}{0.78,0.78,0.82}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=black,
+    citecolor=black,
+    pdftitle={RoboFetch Software Engineering Report},
+    pdfauthor={Arian Shafagh}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\itshape RoboFetch}
+\fancyhead[R]{\small\itshape University of Messina}
+\fancyfoot[C]{\thepage}
+\setlength{\headheight}{15pt}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\titleformat{\chapter}
+  {\normalfont\huge\bfseries}
+  {\thechapter}{1em}{}
+\titlespacing*{\chapter}{0pt}{-20pt}{22pt}
+
+\lstdefinestyle{report}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{codepurple},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codegreen},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=6pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=4,
+    frame=single,
+    rulecolor=\color{framerule}
+}
+\lstset{style=report}
+
+% Shorthand for inline code so underscores never need escaping by hand.
+\newcommand{\code}[1]{\texttt{#1}}
+
+% Figure helper, so every figure is inserted the same way.
+\newcommand{\uploadedfigure}[4]{
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=#2]{#1}
+    \caption{#3}
+    \label{#4}
+\end{figure}
+}
+
+\begin{document}
+
+% ============================================================
+% TITLE PAGE
+% ============================================================
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+
+{\Huge\bfseries RoboFetch\par}
+\vspace{0.6cm}
+{\LARGE A Simulated Warehouse Pick-and-Delivery Robot\par}
+\vspace{0.4cm}
+{\large with Machine-Learning Order Admission\par}
+
+\vspace{2.5cm}
+{\large Software Engineering Report\par}
+
+\vspace{3cm}
+{\large\bfseries Arian Shafagh\par}
+\vspace{0.4cm}
+{\large University of Messina\par}
+\vspace{0.2cm}
+{\large Software Engineering\par}
+
+\vfill
+\end{titlepage}
+
+\tableofcontents
+\listoffigures
+\listoftables
+
+% ============================================================
+\chapter{Introduction}
+% ============================================================
+
+\section{Project Overview}
+RoboFetch is a simulated warehouse robot that collects a product from a shelf and delivers it to
+a delivery bay. A client opens a web page, chooses a product from a catalogue and a destination,
+and the system replies with the predicted cost of the job and a decision: the robot either accepts
+the order or refuses it with a reason. If the order is accepted, a differential-drive robot inside
+a Gazebo simulation drives to the shelf, attaches the parcel, carries it to the bay, releases it,
+and returns to its charging station.
+
+The system is built on ROS~2 Jazzy and Gazebo Harmonic for the robotic part, and on FastAPI with
+SQLite for the web part. A small machine-learning service predicts whether an order can be
+completed. The whole application runs on a single machine under WSL2, and the user interface is an
+ordinary web page that works in any browser.
+
+The project is not only about making the robot move. Making a robot drive from one point to
+another is largely solved by the navigation library that the project uses. What makes this a
+software engineering project is everything around that: a database that describes the warehouse,
+a model of the robot's physical condition, a decision procedure that decides whether a job is
+possible before committing to it, a web interface, and a test strategy that can prove the robot
+really did what the software claims.
+
+\uploadedfigure{Figures/fig-warehouse-layout.png}{0.92\textwidth}
+{The simulated warehouse, drawn to scale from the world description file. Three shelves hold six
+products, two delivery bays sit in opposite corners, and the charging station is separate from
+both.}{fig:warehouse}
+
+\section{Project Motivation}
+The first motivation is realism in the ordering process. In an early version of this project the
+client had to write the name of an item and the coordinates of a shelf. That is not how a warehouse
+works. A warehouse has a catalogue: every product has an identifier, a description, a weight and a
+storage location. Ordering should mean choosing a product, not typing coordinates. Moving the
+warehouse description into a database also means the layout can change without changing any code.
+
+The second motivation is the question that a real fleet operator actually asks, which is not
+``can the robot drive there'' but ``can the robot do this job right now''. A robot has a battery
+that drains, motors that heat up, and mechanical parts that wear. A heavy product costs more energy
+and produces more heat than a light one. A long route costs more than a short one. If the system
+accepts every order without thinking about this, the robot will eventually run out of charge in the
+middle of the warehouse. The system should be able to say no.
+
+The third motivation is evidence. During development the system once reported that three
+deliveries out of three had succeeded when in fact no parcel had moved at all. Every command had
+returned success, and every status message agreed with the mistake. That experience shaped the
+whole testing approach of the project: a report of success is a claim, and the position of the
+parcel inside the simulator is the evidence. Wherever the software makes a physical claim, the
+project checks it against the simulator rather than against its own log messages.
+
+The fourth motivation is simplicity of the interface. The web application is rendered entirely on
+the server and contains no JavaScript. This was a deliberate constraint. It keeps the client side
+trivial to reason about, it removes an entire category of bugs, and it means the interface works
+in any browser without a build step.
+
+\section{Main Contribution}
+The main contribution of the project is a delivery system that makes an informed decision before
+accepting work. The contribution is not the machine-learning model itself, which is a small
+classifier built with a standard library. The contribution is the decision workflow around it: the
+system builds a feature vector from live robot telemetry, the product catalogue and a route it
+computes itself, consults the model, and then applies its own safety policy which is allowed to
+overrule the model's answer.
+
+A second contribution is the physical verification discipline described above, and a third is the
+condition model, which links payload weight, distance, energy, temperature and wear into a single
+set of coupled equations that both the robot and the web tier share.
+
+\section{Structure of this Report}
+The report follows the phases of the development process described in
+Chapter~\ref{ch:process}. Chapter~\ref{ch:categorization} classifies the functionality of the
+system into the three categories required by the course. Chapters~\ref{ch:requirements}
+and~\ref{ch:analysis} cover requirements and analysis. Chapter~\ref{ch:architecture} describes the
+software architecture in detail, and Chapter~\ref{ch:quality} discusses the engineering principles
+and quality standards that the implementation follows. Chapters~\ref{ch:environment}
+to~\ref{ch:ml} describe the simulated environment, the implementation, the complex algorithms and
+the machine-learning component. Chapter~\ref{ch:testing} presents the testing strategy and the
+measured results. The remaining chapters cover the evolution of the system, its limitations and
+the conclusions.
+
+% ============================================================
+\chapter{Requirements and Feature Categorization}
+\label{ch:categorization}
+% ============================================================
+
+\section{Focusing on the Requirements}
+The course requires a system whose functionality is balanced across three categories: features
+that are oriented towards data and repositories, features that are provided by third-party
+services or libraries, and complex features whose application logic is designed and implemented as
+part of the project. This chapter classifies every functionality of RoboFetch into one of those
+three categories and gives a short motivation for each classification.
+
+The classification matters in this project because it contains a machine-learning model, and a
+machine-learning model taken from a library is a third-party service. It is listed as such below.
+The argument that the project makes is not that the model is a complex contribution, but that the
+decision workflow which surrounds the model is one. That argument is made explicitly in
+Section~\ref{sec:cat-complex} and demonstrated algorithmically in Chapter~\ref{ch:complex}.
+
+\section{Data and Repository Oriented Functionalities}
+These features are built on storage and simple computation. They are the record of what the
+warehouse contains, what was ordered, what happened, and what condition the robot is in. There is
+no novel algorithm in them; the engineering value is in the design of the schema and in keeping the
+stored data honest.
+
+\begin{longtable}{@{}p{0.06\textwidth}p{0.36\textwidth}p{0.52\textwidth}@{}}
+\toprule
+\textbf{ID} & \textbf{Functionality} & \textbf{Motivation for this category} \\
+\midrule
+\endhead
+A1 & Product catalogue management & Create, read, update and delete rows describing products:
+identifier, name, category, weight, stock, storage location and simulator model. \\
+A2 & Warehouse layout registry & The same operations over shelves, pick points, delivery bays and
+the charging station. These coordinates used to be constants inside the source code. \\
+A3 & Order lifecycle management & Storing an order and moving it through its states as the robot
+reports progress. Standard record management. \\
+A4 & Order preview resolution & Turning a product identifier into a pick point, a route and a
+distance. A lookup and a sum of distances; no decision is taken here. \\
+A5 & Delivery history & An append-and-query record of duration, distance, energy, payload and
+outcome for every finished order. \\
+A6 & Robot telemetry time series & Periodic inserts of battery, temperature, condition, payload and
+speed. \\
+A7 & Per-run CSV export & Serialisation of the telemetry to a file, one file per run. \\
+A8 & Statistics and key indicators & Success rate, mean delivery time, average energy and total
+energy, all produced with aggregate SQL. \\
+A9 & Deterministic cost formula & A closed-form expression that converts distance, payload,
+temperature and condition into energy. It is a formula, not a learned or searched result, and it is
+also the fallback used when the prediction service is unavailable. \\
+\bottomrule
+\caption{Data and repository oriented functionalities.}
+\label{tab:cat-a}
+\end{longtable}
+
+\section{Third-Party Services, Libraries and Tools}
+These components are integrated and configured but not implemented as part of the project.
+Considerable engineering effort goes into using them correctly, but none of the logic inside them
+belongs to the project.
+
+\begin{longtable}{@{}p{0.06\textwidth}p{0.30\textwidth}p{0.58\textwidth}@{}}
+\toprule
+\textbf{ID} & \textbf{Service} & \textbf{Motivation for this category} \\
+\midrule
+\endhead
+B1 & Nav2 navigation stack & A complete off-the-shelf navigation system providing localization,
+global planning, local control and a behaviour tree. The project supplies parameters, a map and
+goals, and receives a result. \\
+B2 & Gazebo Harmonic & The physics simulator, including the lidar sensor model and the detachable
+joint used as a gripper. Used as provided. \\
+B3 & FastAPI and Uvicorn & The web framework and the server that runs it. \\
+B4 & SQLite & The database engine. \\
+B5 & scikit-learn & The implementation of the random forest classifier and the surrounding
+pipeline. Considered a third-party service on its own; see
+Section~\ref{sec:cat-complex}. \\
+B6 & pandas and NumPy & Data handling for the training set and numerical work. \\
+B7 & joblib & Serialisation of the trained model so the service can load it. \\
+B8 & ROS tooling & The ROS to Gazebo bridge, the robot state publisher and the URDF processor. \\
+\bottomrule
+\caption{Third-party services, libraries and tools.}
+\label{tab:cat-b}
+\end{longtable}
+
+\section{Complex Functionalities}
+\label{sec:cat-complex}
+These three features carry the application logic of the system. Each of them is described
+algorithmically in Chapter~\ref{ch:complex}, with the diagrams that the course requires for complex
+features.
+
+\subsection*{C1 - Robot condition model and duty cycle}
+This is a dynamic model of the robot's physical state together with the policy that decides when
+the robot is allowed to work. Three quantities evolve together and influence each other. Energy
+consumption grows with payload mass and distance. Temperature grows with motor load and payload and
+decays towards the ambient temperature. Mechanical condition degrades with accumulated energy and
+with time spent above a temperature threshold, and a degraded condition then increases energy
+consumption again. That mutual influence is what makes it a model rather than three independent
+counters. On top of the equations sits a state machine which returns the robot to its station after
+a period without work, refuses to depart without enough charge to come back, and forces a cooldown
+when the motors overheat.
+
+\emph{Motivation:} there is no library that models this robot. The equations, the coupling between
+them and the operational policy were all specified and implemented in this project, and the
+behaviour is described by a state diagram and a set of difference equations.
+
+\subsection*{C2 - Order admission and cost preview}
+This is the procedure that converts a request into a decision. It resolves the product to its pick
+point, computes the three legs of the route including the return to the station, applies the cost
+formula to each leg, simulates the condition model forward to find the peak temperature the job
+would produce, assembles a feature vector from live telemetry, consults the classifier, and then
+applies a policy which can overrule the classifier's answer.
+
+\emph{Motivation:} this is the classification that the course brief warns about, so it is worth
+being precise. A classifier taken from a library is a third-party service, and it is listed as B5
+above. What belongs to this project is the workflow around it. The model never sees an order; it
+sees a vector of five numbers that this system constructs. Its answer is one input among several,
+and it is consulted last, after four physical checks have already passed. A classifier that answers
+``feasible'' still produces a refusal if the robot could not physically return to its station
+afterwards. When the prediction service cannot be reached at all, the workflow still produces a
+decision using the deterministic model alone, and records that it did so. The feature construction,
+the route computation, the forward simulation, the gate ordering and the fallback are all
+implemented in this project.
+
+\subsection*{C3 - Physical delivery verification}
+Before an order is marked complete, the parcel's actual position inside the simulator is compared
+with the coordinates of the delivery bay. If they disagree, the order fails, whatever the commands
+reported.
+
+\emph{Motivation:} this is not a status check but a cross-validation between two independent
+sources of truth, the command pipeline and the physics engine. It exists because of a real failure
+during development in which the system reported three successful deliveries while no parcel had
+moved. The logic and, more importantly, the decision about what counts as admissible evidence
+belong to this project.
+
+\section{Balance of the Categories}
+Table~\ref{tab:balance} and Figure~\ref{fig:balance} summarise the classification.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}lcp{0.55\textwidth}@{}}
+\toprule
+\textbf{Category} & \textbf{Count} & \textbf{Assessment} \\
+\midrule
+A - Data and repository & 9 & Well covered. A relational model with six related tables, full
+create-read-update-delete access, and derived statistics. \\
+B - Third-party services & 8 & Well covered and genuinely varied: a robotics stack, a physics
+simulator, a web framework, a database engine and a machine-learning library. \\
+C - Complex, implemented here & 3 & The smallest category, but the deepest. Each item is a
+multi-step algorithm rather than a single function. \\
+\bottomrule
+\end{tabular}
+\caption{Balance across the three required categories.}
+\label{tab:balance}
+\end{table}
+
+\uploadedfigure{Figures/fig-category-balance.png}{0.72\textwidth}
+{Distribution of functionality across the three required categories.}{fig:balance}
+
+The third category contains fewer items than the other two. This is a deliberate result rather
+than an oversight. An earlier version of the system contained two additional complex features, a
+delivery scheduler that chose the geographically nearest pending order and a retry state machine
+with exponential backoff. Both were removed. The scheduler was removed because customers expect to
+be served in the order they placed their requests, not in the order that is most convenient for the
+robot, so the queue is now processed first-in-first-out. The retry state machine was removed
+because the complexity of the machine was not justified by the behaviour it produced; three
+attempts followed by a return to the station achieves the same requirement in a form that can be
+read at a glance. Removing a feature that does not earn its complexity is a legitimate engineering
+decision, and the report states it openly rather than keeping unnecessary code in order to inflate
+a count.
+
+% ============================================================
+\chapter{Software Development Process}
+\label{ch:process}
+% ============================================================
+
+\section{Choice of Process Model}
+The project follows a plan-driven, waterfall process. The choice was made deliberately and it fits
+the situation of this project for three reasons.
+
+First, the requirements were known and stable before implementation started. The system had to
+accept orders, move parcels, and record what happened; the detail changed, but the shape of the
+problem did not. Second, the client communicates once. In this project the requirements were agreed
+at the start and then implemented, rather than being renegotiated continuously during development.
+Third, there was no expectation of changing scope during construction, which is the situation in
+which incremental methods pay for their overhead.
+
+An agile process would have suited a project where the requirements are discovered through
+feedback from users. That is not the case here. The requirements of a delivery robot are largely
+determined by physics and by the warehouse, both of which are known in advance.
+
+\uploadedfigure{Figures/fig-waterfall.png}{0.9\textwidth}
+{The phases of the process, each producing the input for the next.}{fig:waterfall}
+
+\section{Phases and Their Deliverables}
+
+\begin{longtable}{@{}p{0.22\textwidth}p{0.72\textwidth}@{}}
+\toprule
+\textbf{Phase} & \textbf{Deliverables} \\
+\midrule
+\endhead
+Requirements & The functional and non-functional requirements listed in
+Chapter~\ref{ch:requirements}, the actors, and the use case model. \\
+Analysis & The domain model, the database design, and the categorisation of functionality. \\
+Design & The architecture, the component decomposition, the interfaces between components, and
+the algorithms for the complex features. \\
+Implementation & The nine software packages, the simulated world, and the machine-learning
+pipeline. \\
+Testing & The automated test suites, the acceptance suite that runs against the live system, and
+the measured results. \\
+Deployment and maintenance & The launch configuration, the run instructions, the known limitations
+and the handover documentation. \\
+\bottomrule
+\caption{Phases of the process and what each produced.}
+\label{tab:phases}
+\end{longtable}
+
+\section{Development Progress}
+The construction phase progressed in a fixed order, because each stage depended on the one before
+it. This ordering was a consequence of the technical dependencies, not of a schedule.
+
+The first stage produced the simulated environment and a robot that could be driven: a world
+description, a robot model with wheels, a lidar sensor and a gripper link, and the bridge that
+connects the simulator to the robotic middleware. Nothing above this stage can be tested until a
+robot exists and moves.
+
+The second stage added autonomous navigation. This required a map, a localization system and a
+planner. The map is generated analytically from the same geometry that defines the world, which
+means the map frame and the world frame are identical and every waypoint can be written in world
+coordinates.
+
+The third stage added manipulation: the gripper node, which attaches and detaches parcels, and the
+verification that a grab really took hold. The fourth stage added the task manager, which chains
+navigation and manipulation into a complete delivery.
+
+The fifth stage added the web tier: the database, the REST interface and the bridge that carries
+orders from the web process into the robotic system. At this point the system could accept an order
+over the network and execute it.
+
+The final stage added the decision layer: the condition model, the admission workflow, the
+prediction service and the user interface. This is the stage that turned a system that executes
+orders into a system that decides whether to accept them.
+
+\section{Traceability}
+Every requirement in Chapter~\ref{ch:requirements} maps forward to a design element and to at
+least one test. The mapping is given in Appendix~\ref{app:traceability}. Traceability is what makes
+a plan-driven process verifiable: because the requirements were fixed before design started, it is
+possible to check at the end that each one is satisfied by something concrete and demonstrated by
+something measurable.
+
+% ============================================================
+\chapter{Requirements Engineering}
+\label{ch:requirements}
+% ============================================================
+
+\section{Functional Requirements}
+
+\begin{longtable}{@{}p{0.08\textwidth}p{0.86\textwidth}@{}}
+\toprule
+\textbf{ID} & \textbf{Requirement} \\
+\midrule
+\endhead
+FR1 & The system shall maintain a catalogue of products, each with a unique identifier, name,
+category, weight and storage location. \\
+FR2 & The system shall maintain a description of the warehouse layout: shelves, per-product pick
+points, delivery bays and one charging station. \\
+FR3 & A client shall submit an order by product identifier and destination, without knowing any
+coordinates. \\
+FR4 & The system shall present a preview before the order is confirmed, containing the product
+details, the route distance, the estimated energy and time, and the decision. \\
+FR5 & The system shall refuse an order it predicts the robot cannot complete, and state a reason a
+human can read. \\
+FR6 & Accepted orders shall be executed in the order in which they were placed. \\
+FR7 & The robot shall navigate to the pick point, attach the parcel, carry it to the delivery bay
+and release it. \\
+FR8 & A failed attachment shall be retried up to three times; after the third failure the order
+fails and the robot returns to its station. \\
+FR9 & The system shall confirm a delivery against the parcel's real position in the simulator
+before marking the order complete. \\
+FR10 & The system shall continuously track the robot's battery, temperature, condition, payload and
+cumulative distance. \\
+FR11 & After a period without pending orders the robot shall return to its station and recharge. \\
+FR12 & Every run shall be logged to a file suitable for machine-learning training. \\
+FR13 & A client shall be able to view the history of all orders and their outcomes. \\
+FR14 & An administrator shall be able to create, read, update and delete products and layout
+entries. \\
+FR15 & The system shall report aggregate statistics: success rate, mean delivery time, energy per
+delivery and totals. \\
+\bottomrule
+\caption{Functional requirements.}
+\label{tab:fr}
+\end{longtable}
+
+\section{Non-Functional Requirements}
+
+\begin{longtable}{@{}p{0.08\textwidth}p{0.86\textwidth}@{}}
+\toprule
+\textbf{ID} & \textbf{Requirement} \\
+\midrule
+\endhead
+NFR1 & The order preview, including the prediction, shall be returned within two seconds. \\
+NFR2 & The system shall remain operable when the prediction service is unavailable, falling back to
+a deterministic rule. \\
+NFR3 & The web application shall require no JavaScript and shall work in any browser. \\
+NFR4 & Robot telemetry shall be recorded at least once per second while the robot is active. \\
+NFR5 & Every reported delivery shall be verifiable against the state of the simulator. \\
+NFR6 & The machine-learning training pipeline shall be removable without affecting the running
+system. \\
+\bottomrule
+\caption{Non-functional requirements.}
+\label{tab:nfr}
+\end{longtable}
+
+\section{Actors and Use Cases}
+The system has two human actors. The \emph{client} places and tracks orders. The
+\emph{administrator} maintains the catalogue and the layout and inspects the condition of the robot
+and the statistics. The navigation stack and the simulator appear as a supporting system actor,
+because the project treats them as external services rather than as parts it implements.
+
+\uploadedfigure{Figures/01-use-case.png}{0.95\textwidth}
+{Use case diagram. The preview includes the feasibility prediction, and confirming an order
+includes obtaining a preview first, which is why an order can never be placed without a decision
+having been made.}{fig:usecase}
+
+\begin{longtable}{@{}p{0.08\textwidth}p{0.28\textwidth}p{0.56\textwidth}@{}}
+\toprule
+\textbf{ID} & \textbf{Use case} & \textbf{Description} \\
+\midrule
+\endhead
+UC1 & Browse product catalogue & The client sees the available products with their weights and
+storage locations. \\
+UC2 & Request order preview & The client selects a product and a destination and receives the
+predicted cost and the decision, without committing to anything. \\
+UC3 & Confirm an order & The client accepts the preview and the order is stored and sent to the
+robot. \\
+UC4 & View order history & The client sees all orders, their states and their outcomes. \\
+UC5 & Execute a delivery & The robot performs the pick-and-place sequence and verifies it. \\
+UC6 & Manage products and layout & The administrator changes the catalogue or the warehouse
+description. \\
+UC7 & View robot condition & The administrator inspects battery, temperature, condition and duty
+state. \\
+UC8 & View analytics & The administrator inspects the aggregate statistics. \\
+UC9 & Predict order feasibility & The system decides whether an order is possible. Always invoked
+as part of a preview, never on its own. \\
+\bottomrule
+\caption{Use cases.}
+\label{tab:usecases}
+\end{longtable}
+
+% ============================================================
+\chapter{Analysis and Domain Model}
+\label{ch:analysis}
+% ============================================================
+
+\section{Domain Concepts}
+The analysis phase identified the entities that the system reasons about. A \emph{product} is
+something a client can order; it has a weight, which matters because weight drives energy
+consumption and heat. A \emph{shelf} is a physical structure holding products. A \emph{pick point}
+is the position the robot parks at in order to reach one particular product; each product has its
+own pick point, because two products on the same shelf are a metre apart and the robot cannot
+reach both from the same place. A \emph{delivery bay} is a destination. The \emph{station} is where
+the robot charges and waits. An \emph{order} links a product to a delivery bay and carries the
+decision that was made about it. \emph{Telemetry} is the record of the robot's condition over time.
+
+\uploadedfigure{Figures/02-domain-class.png}{0.98\textwidth}
+{Domain class diagram of the runtime objects. The condition model on the left is shared: the same
+module is used by the robot node, by the admission workflow and by the tool that generates
+training data.}{fig:domainclass}
+
+\section{Design of the Database}
+The database is the part of the system that changed most between versions, and the design is worth
+explaining because it determines how flexible the rest of the system is.
+
+The central decision is that an \emph{order references a product, never a coordinate}. In the
+first version an order carried the coordinates of a pickup point and a drop-off point. That worked,
+but it meant the client had to know where things were, and it meant that moving a shelf would
+invalidate every stored order. Now the client sends a product identifier and a destination
+identifier, and the system resolves those to coordinates at the moment the order is admitted. The
+consequence is that the warehouse can be rearranged by editing rows in a table.
+
+Figure~\ref{fig:dbclass} shows the schema as a UML class diagram, in which each table is a class
+with the \code{table} stereotype and each column carries its SQL type. Figure~\ref{fig:er} shows
+the same schema as an entity-relationship diagram, which is the more conventional view of a
+database and makes the cardinalities easier to read.
+
+\uploadedfigure{Figures/07-database-class.png}{0.98\textwidth}
+{The database schema as a UML class diagram. Primary and foreign keys are marked, and the two
+single-row tables that intentionally have no relationships are annotated.}{fig:dbclass}
+
+\uploadedfigure{Figures/06-er-diagram.png}{0.95\textwidth}
+{The same schema as an entity-relationship diagram.}{fig:er}
+
+The schema contains nine tables in three groups. The layout group describes the warehouse:
+\code{shelves}, \code{pick\_points}, \code{delivery\_points} and \code{station}. The catalogue and
+order group contains \code{products}, \code{orders} and \code{delivery\_history}. The condition
+group contains \code{robot\_telemetry} and \code{robot\_state}.
+
+Four design decisions are worth justifying:
+
+\textbf{The layout is data, not constants.} Every coordinate lives in a table. Nothing in the
+robot code or the web code contains a hard-coded position. Adding a product or moving a delivery
+bay requires no recompilation.
+
+\textbf{The admission estimate is stored on the order.} When an order is admitted, the predicted
+distance, energy and duration are written into the order row along with the decision and the reason
+for it. This costs a few columns and makes it possible to compare what was predicted against what
+actually happened, which is the basis of Figure~\ref{fig:predvsactual}.
+
+\textbf{Current state and history are separate tables.} \code{robot\_state} holds a single row with
+the current condition so a web page can read it with one query, while \code{robot\_telemetry} is
+append-only and holds the full time series used for analysis and for machine-learning training.
+Mixing the two would have made either the page slow or the history unavailable.
+
+\textbf{Two tables intentionally have no relationships.} \code{station} and \code{robot\_state} are
+single-row tables. The station is a property of the warehouse rather than of any order, and the
+robot state is a property of the robot. Leaving them unconnected is correct, and the diagram
+annotates this so it does not look like an omission.
+
+The schema is in third normal form. Each fact is stored once: a product's weight lives only in the
+\code{products} table, and a pick point's coordinates live only in \code{pick\_points}. Orders refer
+to both by key.
+
+% ============================================================
+\chapter{Software Architecture}
+\label{ch:architecture}
+% ============================================================
+
+\section{Architectural Drivers}
+Architecture is the set of decisions that are expensive to change later, so it is worth stating
+what actually drove them in this project. Four concerns shaped the structure more than anything
+else.
+
+\textbf{The robot must keep working when the prediction service does not.} A machine-learning
+service is the least reliable component in the system: it may be stopped, it may be slow, or it may
+have no model loaded. If the ability to accept an order depended on it, the whole system would
+inherit its reliability. This drove the decision to place the model behind a network boundary and
+to require a deterministic fallback.
+
+\textbf{Physical claims must be independently verifiable.} The software must never be the only
+witness to its own success. This drove the decision to keep a channel from the simulator that
+reports the real position of every parcel, separate from the command path.
+
+\textbf{The warehouse description must be changeable without touching code.} This drove the
+database-centred design described in the previous chapter.
+
+\textbf{The client must be simple.} Requiring no JavaScript drove the choice of server-rendered
+pages and removed the need for any client-side state.
+
+\section{Layered Architecture}
+The system is organised into five layers. Each layer depends only on the layers below it; nothing
+in a lower layer knows that the layers above exist. This is what allows the robot logic to be
+tested without a web server and the decision logic to be tested without a robot.
+
+\uploadedfigure{Figures/fig-layered-architecture.png}{0.85\textwidth}
+{The five layers and the direction of dependencies.}{fig:layers}
+
+The \textbf{presentation layer} contains only templates and a stylesheet. It holds no logic and no
+state.
+
+The \textbf{application layer} is the web tier. It owns the database, the admission workflow, the
+client for the prediction service and the bridge to the robotic middleware. It is the only layer
+that talks to more than one of its neighbours, and that is its purpose: it is the place where a
+request from a person becomes a command for a machine.
+
+The \textbf{prediction service} is a separate process holding the trained model.
+
+The \textbf{robot logic layer} contains the software written for this robot: the task manager that
+executes an order, the condition model, and the gripper node.
+
+The \textbf{robot platform layer} contains the third-party components: the navigation stack, the
+simulator, and the bridge between them.
+
+\section{Component Decomposition}
+Figure~\ref{fig:component} shows the components, their interfaces and the direction of every
+dependency. Table~\ref{tab:components} states the single responsibility of each package.
+
+\uploadedfigure{Figures/08-component.png}{0.98\textwidth}
+{Component diagram showing the nine packages and their interfaces.}{fig:component}
+
+\begin{longtable}{@{}p{0.26\textwidth}p{0.68\textwidth}@{}}
+\toprule
+\textbf{Package} & \textbf{Single responsibility} \\
+\midrule
+\endhead
+\code{robofetch\_description} & Describes the robot: geometry, wheels, sensors, gripper link and
+the simulator plugins attached to them. \\
+\code{robofetch\_gazebo} & Describes the world and the translation between simulator topics and
+middleware topics. \\
+\code{robofetch\_nav} & Holds the navigation configuration and the generated map. \\
+\code{robofetch\_interfaces} & Defines the one custom service used to command the gripper. \\
+\code{robofetch\_core} & The robot's own logic: condition model, task manager, gripper node. \\
+\code{robofetch\_bridge} & The web tier: HTTP interface, database access, admission workflow and
+the client for the prediction service. \\
+\code{robofetch\_ai} & Serves the trained classifier over HTTP. \\
+\code{robofetch\_web} & Templates and stylesheet. \\
+\code{robofetch\_bringup} & Starts every process in the correct order. \\
+\bottomrule
+\caption{Package responsibilities.}
+\label{tab:components}
+\end{longtable}
+
+\section{Integration and Communication Styles}
+The system uses three different communication styles, each chosen for a different reason.
+
+\textbf{Publish and subscribe, between the web tier and the robot.} Orders travel from the web
+process to the task manager on a topic, and status changes travel back on another topic. The
+payload is JSON carried inside a plain string message. Using a generic string rather than a custom
+message type keeps the web tier free of any dependency on the robotic middleware's message
+definitions, which matters because the web tier is also the part that talks to the browser and the
+database. The cost of this choice is that the payload is not type-checked by the middleware; the
+benefit is a much cleaner boundary. The asynchronous style is also correct on its own terms: a
+status update is a stream of events, and a dropped message must not block the HTTP request that
+created the order.
+
+\textbf{Request and response, between the browser and the web tier.} Ordinary HTTP, with pages
+rendered on the server. A form post produces a new page.
+
+\textbf{Request and response over a network boundary, between the web tier and the prediction
+service.} The model could have been imported directly into the web process. Putting it behind HTTP
+in a separate process costs a little latency and gains something more valuable: the failure of the
+model becomes a visible, ordinary, testable event rather than a hypothetical one. Because the
+boundary exists, the fallback path can be exercised simply by stopping a process, and the system
+can report on a status page whether the service is currently reachable.
+
+\section{Data Architecture}
+Database access is confined to a single class which exposes methods in the vocabulary of the
+domain, such as ``list products'' or ``create order'', rather than exposing SQL to its callers.
+This is the repository pattern, and it means the rest of the system does not know that SQLite is
+being used.
+
+Each operation opens its own short-lived connection. This is unusual enough to justify: the web
+process serves HTTP requests on one set of threads and receives robot messages on another, and both
+write to the database. A single shared connection would need locking around every use. Short-lived
+connections avoid the problem entirely, and the cost is negligible for a local file database.
+
+\section{Deployment Architecture}
+Every component runs on one machine. Figure~\ref{fig:deployment} shows the process layout.
+
+\uploadedfigure{Figures/09-deployment.png}{0.98\textwidth}
+{Deployment diagram. The browser is the only component outside the Linux environment.}
+{fig:deployment}
+
+The browser is deliberately the only component outside the Linux environment. Serving the interface
+over HTTP means the user interacts with the system through an ordinary browser on the host
+operating system, which avoids the graphical problems that the simulator's own windows suffer from
+in this environment. It also means the interface would work unchanged from another machine on the
+same network.
+
+\section{Architectural Decisions}
+Table~\ref{tab:adr} records the significant decisions, the alternatives considered and the
+consequences accepted.
+
+\begin{longtable}{@{}p{0.20\textwidth}p{0.22\textwidth}p{0.24\textwidth}p{0.24\textwidth}@{}}
+\toprule
+\textbf{Decision} & \textbf{Alternative} & \textbf{Rationale} & \textbf{Consequence} \\
+\midrule
+\endhead
+Prediction model in a separate process behind HTTP & Import the model into the web process &
+Makes the failure of the model an ordinary, testable event and keeps the web tier free of the
+machine-learning dependency & Extra process to start; a small latency cost per preview \\
+JSON on generic string messages between web tier and robot & Custom message types &
+Keeps the web tier independent of middleware message definitions & Payload is not type-checked by
+the middleware, so both sides must agree by convention \\
+Map generated analytically from the world geometry & Build the map by driving the robot around &
+Zero drift, perfectly repeatable, and the map frame equals the world frame so waypoints are world
+coordinates & The map must be regenerated whenever the world geometry changes \\
+Server-rendered pages with no JavaScript & A client-side application &
+Simplicity, no build step, works in any browser & Live values need a page refresh rather than a
+push \\
+SQLite & A client-server database &
+Single file, no service to administer, adequate for one robot & Would need replacing for
+concurrent writers at scale \\
+Layout stored in the database & Constants in source code &
+The warehouse can be rearranged without touching code & An empty or wrong database produces a
+system that starts but cannot route anything \\
+\bottomrule
+\caption{Architectural decisions and their consequences.}
+\label{tab:adr}
+\end{longtable}
+
+% ============================================================
+\chapter{Software Engineering Principles and Quality Standards}
+\label{ch:quality}
+% ============================================================
+
+This chapter argues about the \emph{quality} of the implementation rather than about what it does.
+A system can satisfy every functional requirement and still be badly built. The principles below
+are the ones the project applied consciously, each with the concrete place in the system where the
+effect can be seen.
+
+\section{Separation of Concerns and Modularity}
+The system is divided into nine packages, and each has one reason to change. If the warehouse
+layout changes, only the world description and the database seed change. If the appearance of the
+interface changes, only the templates and the stylesheet change. If the physics of the condition
+model changes, only one module changes. This is the practical test of modularity: a change request
+should map to a small, predictable set of files.
+
+\section{Single Source of Truth}
+The condition model exists in exactly one module. That module is imported by the robot node that
+runs on the live robot, by the admission workflow in the web tier that predicts the cost of an
+order, and by the tool that generates training data for the classifier.
+
+This matters more than it appears. If the web tier had its own copy of the energy formula, its
+predictions would slowly stop matching the robot's actual behaviour as one copy was edited and the
+other was not. If the data generator had a third copy, the classifier would be trained on physics
+that the real system does not implement. Sharing one definition makes that class of inconsistency
+impossible rather than merely unlikely.
+
+\section{High Cohesion and Loose Coupling}
+Each module groups things that change together and knows as little as possible about the others.
+The robot side never sees the product catalogue: it receives a model name, a weight and two pairs of
+coordinates, and that is all it needs. The web tier never deals in coordinates until the moment it
+resolves an order. The gripper node knows how to attach and detach a parcel but nothing about
+orders or routes.
+
+\section{Dependency Direction and Testability}
+Testability is not a property that can be added at the end; it follows from the direction of
+dependencies. In this system the two modules that contain the important decisions, the condition
+model and the admission policy, contain no imports of the robotic middleware, no HTTP client and no
+database handle. Everything they need is passed in as plain data.
+
+\uploadedfigure{Figures/fig-dependency-direction.png}{0.88\textwidth}
+{Dependency direction. The modules holding the decision logic depend on nothing, which is why they
+can be tested in milliseconds.}{fig:deps}
+
+The consequence is measurable. The complete decision path of the system, including every policy
+gate and the full condition model, is covered by tests that run in a few seconds without starting a
+simulator, a database or a web server. Had the policy been written directly inside the HTTP
+handlers, testing a refusal would have required a running robot with a flat battery.
+
+\section{Fail-Safe Design and Graceful Degradation}
+The prediction service is optional by construction. If it cannot be reached, the client that talks
+to it returns nothing rather than raising, and the admission workflow continues using the
+deterministic model alone. The decision is still made, the order is still handled, and the system
+records that the decision was taken without the model so the difference is visible afterwards.
+
+This is the difference between a system that degrades and one that fails. The requirement NFR2
+exists precisely to force this behaviour, and it is verified by a test that supplies an
+unreachable prediction service and asserts that a decision is still produced.
+
+\section{Defensive Verification}
+The strongest principle the project adopted is that \emph{a command returning success is not
+evidence that anything happened}. It was adopted after a failure in which every layer of the system
+agreed that three deliveries had succeeded while no parcel had moved.
+
+The principle is applied in two places. A delivery is confirmed by reading the parcel's real
+position from the simulator and comparing it with the destination, not by observing that the
+release command returned success. A grab is confirmed by reading the joint's own reported state,
+which is either attached or detached, rather than by measuring the distance between the parcel and
+the robot. The distance check had a blind spot that is worth describing because it is subtle: it
+measured the gap before the attach and again afterwards, and accepted the grab if the gap was still
+small. If the attach silently did nothing, neither the robot nor the parcel moved, so the second
+measurement equalled the first and the check passed. A test that cannot fail is worse than no test,
+because it produces confidence without evidence.
+
+\section{Configuration over Hard-Coding}
+Warehouse geometry, the product catalogue and the robot's operating parameters are all data. The
+layout lives in the database; the robot's thresholds are declared as parameters that can be
+overridden when the system starts. The rule applied throughout is that a value which a user might
+reasonably want to change should not require an edit to a source file.
+
+\section{Observability}
+A system that cannot be inspected cannot be diagnosed. Three mechanisms provide this. A health
+endpoint reports not only that the web service is alive but whether a robot is actually subscribed
+to the order topic, which distinguishes ``the system is broken'' from ``nothing is listening''.
+Telemetry is published continuously and stored. Every run writes a log file.
+
+The health endpoint deserves a note, because it was added in response to a specific class of
+confusion. Publishing a message to a topic that nobody subscribes to succeeds silently. An order
+sent to a robot that is not running therefore looks exactly like an order that was accepted
+normally. Reporting the live subscriber count turns an invisible failure into a visible one.
+
+\section{Error Handling and Defensive Programming}
+Input is validated at the boundary: an unknown product or destination produces a clear error
+before anything is stored. HTTP status codes are used for their intended meanings, so a request to
+cancel an order that has already started returns a conflict rather than a generic failure. Retries
+are bounded: three attempts, then the order fails and the robot goes home, so no failure can loop
+forever. Where a component can be absent, its absence is handled explicitly rather than allowed to
+raise.
+
+\section{Coding Standards and Documentation}
+The code follows a consistent naming style and a consistent structure: modules begin with a
+docstring that explains what the module is for and, where a decision is not obvious, why it was
+made that way. Comments in this project are used mainly to record reasoning rather than to restate
+the code, because the reasoning is the part that cannot be recovered by reading the implementation.
+A separate handover document records the problems encountered during development and their
+solutions.
+
+\section{Maintainability and Extensibility}
+The practical test of maintainability is how much has to change in order to make a plausible new
+request work. Adding a product to the catalogue requires a row in a table and a model in the world
+description; no code changes. Moving a delivery bay requires editing two numbers in a table.
+Changing how much energy the robot uses requires editing one module, and every part of the system
+that depends on it, including the training data generator, follows automatically.
+
+\section{Summary of Quality Attributes}
+
+\begin{longtable}{@{}p{0.24\textwidth}p{0.70\textwidth}@{}}
+\toprule
+\textbf{Attribute} & \textbf{How it is achieved and where it can be seen} \\
+\midrule
+\endhead
+Reliability & Bounded retries, a fallback for the prediction service, and physical verification
+before any success is reported. \\
+Testability & Decision logic free of infrastructure dependencies; 65 automated tests that need no
+simulator. \\
+Maintainability & One reason to change per package; configuration held as data. \\
+Observability & Health reporting, continuous telemetry, per-run logs. \\
+Portability & The interface is a web page; the system runs from a single command. \\
+Performance & The preview, including the prediction, responds well inside its two-second budget. \\
+\bottomrule
+\caption{Quality attributes and the mechanisms that provide them.}
+\label{tab:quality}
+\end{longtable}
+
+% ============================================================
+\chapter{The Simulated Environment}
+\label{ch:environment}
+% ============================================================
+
+\section{The Warehouse}
+The warehouse is a rectangular room of eight metres by six, containing three shelves, two delivery
+bays and a charging station, shown to scale in Figure~\ref{fig:warehouse}. Almost every dimension in
+it is the result of a specific problem, and this section explains the reasoning because the geometry
+is part of the engineering rather than decoration.
+
+\textbf{The room is rectangular, not square.} An early version used a square room. A square room is
+rotationally ambiguous to a lidar: rotated by ninety degrees, the predicted scan is identical, so
+the localization system genuinely cannot tell the two positions apart. The consequence was that the
+robot's estimate of its own position would occasionally jump to a wrong hypothesis, after which it
+would drive confidently into a wall. Making the room rectangular removes the ambiguity.
+
+\textbf{The shelves have different sizes and are placed asymmetrically.} This gives every part of
+the room a distinctive appearance to the laser, which keeps localization stable. The shelves are
+therefore doing two jobs at once: they are the storage locations, and they are the landmarks.
+
+\textbf{Every shelf is flush against a wall.} A gap between a shelf and a wall forms a corridor. A
+robot of forty-four centimetres, with the safety margin the planner adds around obstacles, cannot
+turn around in a corridor narrower than roughly 1.2 metres. During development the robot drove into
+such a corridor, wedged itself, and its position estimate then drifted by nearly three metres,
+after which the planner refused every goal it was given, including one in the empty centre of the
+room. Pushing the shelves against the walls removes the possibility.
+
+\textbf{The two delivery bays are in opposite corners and the station is somewhere else again.}
+Parcels are nine-centimetre cubes, deliberately shorter than the height of the lidar, so a carried
+parcel is never mistaken for an obstacle. The consequence is that a delivered parcel is invisible to
+the navigation system. Placing deliveries close together would build a pile of obstacles the robot
+cannot see, so the bays are far apart, and the station is separate from both so the robot never
+parks on something it has delivered.
+
+\textbf{The two parcels on each shelf are about a metre apart.} A parcel is carried on the floor
+rather than lifted, so the only thing preventing a carried parcel from knocking into a stored one is
+physical separation. Lifting was considered and rejected: raising a parcel into the plane of the
+laser would make the robot detect an obstacle directly in front of itself and refuse to move.
+
+\section{The Robot}
+The robot is a differential-drive platform with two driven wheels, two casters, a lidar and a
+gripper link at the front. Two details of the model are worth recording.
+
+The wheels are directly under the centre of mass. In an earlier version they were behind it, which
+put a large share of the weight on a nearly frictionless caster; the robot skidded and the wheel
+odometry became unreliable, which matters because the localization system uses that odometry.
+
+The gripper is not a mechanical claw. It is a joint provided by the simulator that can be attached
+and detached on command, which binds a parcel rigidly to the gripper link. This is a simplification,
+and it is the main source of the delivery inaccuracy discussed in Chapter~\ref{ch:limitations}: the
+joint binds the parcel wherever it happens to be lying, which is often some distance off centre, and
+releases it at that same offset.
+
+\section{The Map}
+The navigation system needs an occupancy map. Rather than producing one by driving the robot around
+and building it from sensor readings, the map is generated analytically from the same wall and shelf
+definitions that describe the world. This has three advantages: there is no drift, because the walls
+are exactly where the simulator puts them; the process is perfectly repeatable; and the map frame is
+identical to the world frame, which means every waypoint in the database can be written in world
+coordinates and compared directly with positions read from the simulator. The corresponding
+obligation is that the map must be regenerated whenever the geometry changes.
+
+% ============================================================
+\chapter{Implementation}
+\label{ch:implementation}
+% ============================================================
+
+\section{Overview}
+This chapter describes how the components are implemented, following the layers from the bottom
+upwards. Figure~\ref{fig:sequence} shows how they cooperate to serve one order, from the client's
+first request through to the verification of the delivery.
+
+\uploadedfigure{Figures/03-sequence-order.png}{0.98\textwidth}
+{Sequence diagram of a complete order. Note that the decision is taken before anything is stored,
+and that the outcome is decided by reading the parcel's real position.}{fig:sequence}
+
+\section{The Database Layer}
+The database layer is a single class that owns the schema and exposes domain operations. On first
+use it creates the tables and inserts the seed data describing the warehouse and the catalogue, so
+a fresh installation is immediately usable.
+
+The one implementation detail that caused a real bug is worth recording. When an order is created,
+the row must be committed before it is read back, because the read opens its own connection and an
+uncommitted write is not visible to it. The insert and the read-back are therefore separated
+deliberately.
+
+\section{The Admission Workflow}
+The admission workflow is implemented as a module of plain functions that take dictionaries and
+return a decision. It has no knowledge of HTTP, of the database or of the robot. Its structure is
+described in detail in Chapter~\ref{ch:complex}.
+
+\section{The Task Manager}
+The task manager executes one order at a time. It takes the oldest pending order, drives to the
+pick point, attempts the grab up to three times, carries the parcel to the delivery bay, releases
+it, and verifies the result before reporting the outcome. If the grab fails three times the order
+fails and the robot returns to its station.
+
+The execution runs on a worker thread which blocks while waiting for navigation results, with the
+message callbacks serviced by a separate executor. This is much easier to follow than a state
+machine driven entirely by callbacks, which was the alternative considered.
+
+Two behaviours are worth describing. When the robot has no work, a timer sends it back to its
+station, where it reports itself as charging and the condition model begins to recover the battery
+and cool the motors. And when the system starts, the task manager repeatedly publishes the robot's
+initial position until the localization system confirms it by publishing a position of its own.
+This handshake replaced a fire-and-forget approach that failed intermittently: early in start-up the
+localization system silently discards a position it cannot yet transform, and if all the attempts
+happened to fall inside that window the robot never localized and simply sat still.
+
+\section{The Gripper}
+The gripper node exposes two services, grab and release, and translates them into commands to the
+simulator's detachable joint. Its important function is not commanding but verifying, and the
+verification is described in Section~\ref{sec:c3}.
+
+\section{The Condition Monitor}
+The condition monitor integrates the equations of the condition model against what the robot is
+really doing. It takes distance from the wheel odometry rather than from the commanded velocity,
+which is a deliberate choice: if the robot is stuck against an obstacle the wheels turn but the
+robot does not move, and a model driven by commands would report energy being spent on travel that
+never happened.
+
+It publishes the resulting condition once per second and writes the same values to a file, one file
+per run. That file is the input to the machine-learning pipeline.
+
+\section{The Prediction Service}
+The prediction service loads the trained model and exposes one operation. If no model is present it
+does not fail: it starts normally and reports that no model is loaded, which allows a caller to
+distinguish ``the model says no'' from ``there is no model''. Those are very different situations
+and confusing them would hide a deployment error.
+
+\section{The Web Application}
+The web application serves four pages: the order form, the preview, the order history and the robot
+condition. All are rendered on the server from templates. The two pages that display live values
+refresh themselves using a standard HTML directive rather than JavaScript, which keeps the
+no-JavaScript constraint intact.
+
+The preview page is the centre of the interface, because it is where the decision is shown to the
+user before anything is committed. It displays the product, the route, the predicted energy and
+time, the battery level the robot would be left with, the peak temperature the job would produce,
+and the decision with its reason.
+
+% ============================================================
+\chapter{Complex Functionality in Detail}
+\label{ch:complex}
+% ============================================================
+
+The course requires complex features to be described algorithmically. This chapter does that for
+the three features classified as complex in Chapter~\ref{ch:categorization}.
+
+\section{C1 - The Robot Condition Model}
+
+\subsection{The Equations}
+Three quantities are integrated forward at each control step. For a step of duration $\Delta t$ in
+which the robot covers a distance $d$ carrying a payload of mass $m$:
+
+The energy consumed is
+\begin{equation}
+E = d \cdot (e_{base} + e_{load} \cdot m) \cdot f_{temp}(T) \cdot f_{health}(H)
+\end{equation}
+
+where the two penalty factors express that a hot or worn robot does the same work less efficiently:
+\begin{align}
+f_{temp}(T) &= 1 + \alpha \cdot \max(0, T - T_{ref}) \\
+f_{health}(H) &= 1 + \beta \cdot \max(0, 1 - H/100)
+\end{align}
+
+The battery falls by the corresponding fraction of its capacity, or rises if the robot is docked.
+The temperature follows a heating term proportional to motor load and payload, and a cooling term
+proportional to the difference from ambient:
+\begin{equation}
+\frac{dT}{dt} = k_{heat} \cdot L \cdot (1 + \gamma \cdot m) - k_{cool} \cdot (T - T_{amb})
+\end{equation}
+
+The condition degrades with energy throughput and with time spent above a warning temperature:
+\begin{equation}
+\frac{dH}{dt} = -\left( w_{E} \cdot \dot{E} + w_{T} \cdot \max(0, T - T_{warn}) \right)
+\end{equation}
+
+Because $f_{health}$ feeds back into $E$, the three quantities are genuinely coupled rather than
+independent.
+
+\subsection{Choice of Constants}
+The constants were chosen so that the relationships are observable within a demonstration rather
+than being technically present but invisible. The battery capacity gives roughly four to six
+deliveries per charge; a much larger battery would be more realistic for a real warehouse robot but
+would mean the battery never became a constraint. The heating constant was chosen so that the
+lightest product settles at a temperature safely below the limit while the heaviest settles above
+it, which is what makes payload weight genuinely decide an outcome rather than merely appearing in
+an equation. This is a modelling decision and is stated as such.
+
+Figure~\ref{fig:payloadenergy} shows the resulting relationship between payload and energy per
+metre.
+
+\uploadedfigure{Figures/fig-payload-energy.png}{0.78\textwidth}
+{Energy per metre for each of the six catalogue weights, computed from the model.}
+{fig:payloadenergy}
+
+\subsection{The Duty Cycle}
+The equations describe how the robot's condition changes. A state machine decides what the robot is
+allowed to do about it.
+
+\uploadedfigure{Figures/04-state-duty-cycle.png}{0.88\textwidth}
+{The duty-cycle state machine. Health states outrank activity: an overheated robot is in cooldown
+whatever the task manager believes it is doing.}{fig:statemachine}
+
+The important property of this machine is that the health states are derived from measurements, not
+from commands. The cooldown state is entered because the measured temperature reached the limit,
+and the admission workflow reads that state and refuses new work while it holds. Figures
+\ref{fig:battery}, \ref{fig:temperature}, \ref{fig:duty} and \ref{fig:wear} show the model running
+on the real system over one session.
+
+\uploadedfigure{Figures/fig-battery-session.png}{0.95\textwidth}
+{Battery over one session, taken from the run log. The shaded intervals are the periods when the
+robot was carrying a parcel, which are visibly steeper than the unloaded intervals.}{fig:battery}
+
+\uploadedfigure{Figures/fig-temperature-session.png}{0.95\textwidth}
+{Motor temperature over the same session. The temperature crosses the limit during a sequence of
+deliveries, the robot enters cooldown, and the temperature then returns to ambient once it is
+docked.}{fig:temperature}
+
+\uploadedfigure{Figures/fig-duty-states.png}{0.95\textwidth}
+{The duty-cycle states over the same session.}{fig:duty}
+
+\uploadedfigure{Figures/fig-condition-wear.png}{0.95\textwidth}
+{Mechanical condition over the same session, degrading with energy throughput and with time spent
+above the warning temperature.}{fig:wear}
+
+\section{C2 - Order Admission and Cost Preview}
+
+\subsection{The Procedure}
+The admission workflow is the decision procedure of the system. Figure~\ref{fig:activity} gives it
+as an activity diagram.
+
+\uploadedfigure{Figures/05-activity-admission.png}{0.86\textwidth}
+{Activity diagram of the admission workflow. The four physical gates run before the classifier is
+consulted.}{fig:activity}
+
+In pseudocode:
+
+\begin{lstlisting}[language=Python,caption={The admission decision.},label={lst:admission}]
+def decide(product, destination, station, robot_state, predictor):
+    # 1. Resolve and cost the job.
+    legs   = route_legs(robot_position, product.pick_point,
+                        destination, station)
+    energy = energy_wh(legs.order, product.weight,
+                       robot_state.temperature, robot_state.condition)
+    ret    = energy_wh(legs.return_leg, 0.0,
+                       robot_state.temperature, robot_state.condition)
+    predicted, peak = simulate_route(robot_state, legs.order, product.weight)
+
+    # 2. Physical gates, cheapest and most certain first.
+    if product.stock <= 0:
+        return REFUSED, "out of stock"
+    if battery_after(energy + ret) < RESERVE_PERCENT:
+        return REFUSED, "could not return to the station"
+    if peak >= T_MAX:
+        return REFUSED, "would overheat"
+    if robot_state.condition < CONDITION_MIN:
+        return REFUSED, "maintenance required"
+
+    # 3. The learned verdict, consulted only once the physics allows it.
+    if predictor is not None:
+        verdict = predictor(features(product, cost, robot_state))
+        if verdict is not None and not verdict.feasible:
+            return REFUSED, "predicted infeasible"
+
+    return ACCEPTED, cost_summary
+\end{lstlisting}
+
+\subsection{Why the Order of the Gates Matters}
+The ordering in Listing~\ref{lst:admission} is the substance of the design, not an implementation
+detail.
+
+The physical gates run first because they are certain and cheap. They are also the gates whose
+refusals a human can act on: ``out of stock'' and ``needs charging'' tell the operator what to do,
+whereas ``the model predicted this would fail'' does not. Running them first means an actionable
+refusal is never masked by a statistical one.
+
+The classifier runs last, and because it runs last it can only ever refuse an order that the
+physics has already allowed. It can never approve one that the physics rejected. This is the
+concrete sense in which the model is a component inside the system's logic rather than the logic
+itself, and it is enforced by a test that supplies a classifier which always answers ``feasible''
+and asserts that an order with a flat battery is still refused.
+
+\subsection{Behaviour When the Model Is Unavailable}
+If the prediction service cannot be reached, the client returns nothing and the workflow proceeds
+to accept the order on the strength of the physical gates alone, recording that the decision was
+taken by policy rather than by the model. The system therefore has two operating modes, one with
+the model and one without, and both produce decisions.
+
+\section{C3 - Physical Delivery Verification}
+\label{sec:c3}
+After the parcel is released, the task manager reads the parcel's position from the simulator and
+compares it with the coordinates of the delivery bay. If the distance exceeds the tolerance, the
+order is marked failed with an explanation, regardless of the fact that every command in the
+sequence returned success.
+
+The same principle is applied one level lower, to the grab. The gripper subscribes to the state
+reported by the detachable joint itself, which is either attached or detached, and uses that as the
+authority. A subtlety worth recording is that this state is published only when it changes, so the
+subscription must exist before the first transition occurs; it is therefore created when the node
+starts rather than when a grab is requested.
+
+% ============================================================
+\chapter{The Machine Learning Component}
+\label{ch:ml}
+% ============================================================
+
+\section{Purpose and Scope}
+The machine-learning component answers a single question: given the robot's condition and the size
+of a proposed job, will the job complete within the battery and thermal limits? It is a binary
+classifier, and it is deliberately the only model in the system. An earlier design considered three
+models, one for energy, one for peak temperature and one for remaining runtime, but a single
+feasibility classifier covers the decision the system actually has to take, and one model is far
+easier to explain, test and justify than three.
+
+\section{Features}
+The model receives five numbers, all physically meaningful.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}lp{0.62\textwidth}@{}}
+\toprule
+\textbf{Feature} & \textbf{Why it is relevant} \\
+\midrule
+Battery percentage & Determines whether the robot can finish and still return. \\
+Motor temperature & Determines how much thermal headroom remains. \\
+Mechanical condition & A worn robot consumes more energy for the same work. \\
+Payload mass & Heavier products consume more energy and generate more heat. \\
+Route distance & The total travel including the return leg. \\
+\bottomrule
+\end{tabular}
+\caption{The classifier's features.}
+\label{tab:features}
+\end{table}
+
+\section{Training Data}
+Training a model requires thousands of labelled examples. A single delivery in the simulator takes
+about a minute, so collecting them from real runs was not practical. The training set is therefore
+generated synthetically, but generated by simulating runs through \emph{the same equations the live
+robot uses}: the generator imports the condition model rather than reimplementing it. The output
+uses the same file format that the live robot writes, so real and generated runs are
+interchangeable and could be combined.
+
+\uploadedfigure{Figures/fig-ml-pipeline.png}{0.95\textwidth}
+{The machine-learning pipeline. The generator and the trainer are disposable; the running system
+depends only on the exported model.}{fig:mlpipeline}
+
+Each generated example samples a plausible starting condition, a payload drawn from the six
+catalogue weights and a route length within the range this warehouse can produce, then runs the
+condition model forward and labels the example according to whether the job would have finished
+within the limits. A small amount of noise is applied to the thresholds so the boundary between the
+two classes is not a perfectly sharp line, which would otherwise let the classifier learn a trivial
+rule.
+
+\uploadedfigure{Figures/fig-ml-class-balance.png}{0.62\textwidth}
+{Class balance of the generated training set.}{fig:mlbalance}
+
+\section{Avoiding Information Leakage}
+The generated file contains columns that the model is deliberately \emph{not} given, in particular
+the battery level after the job and the peak temperature reached. Those values are produced by the
+same formula that produces the label, so including them would allow the model to read the answer off
+its own input and score almost perfectly while learning nothing. The model receives only quantities
+that are knowable before the job runs, which is exactly the information the admission workflow has
+at the moment it must decide.
+
+\section{Model and Results}
+The classifier is a random forest inside a pipeline with a feature scaler, so the exported artefact
+is self-contained and the service can hand it raw physical units. On a held-out quarter of the data
+the model reached an accuracy of ninety-six per cent, and five-fold cross-validation on the training
+split gave an F-measure of 0.972.
+
+\uploadedfigure{Figures/fig-ml-confusion.png}{0.60\textwidth}
+{Confusion matrix on the held-out test split.}{fig:confusion}
+
+\uploadedfigure{Figures/fig-ml-importance.png}{0.82\textwidth}
+{Relative importance of the five features.}{fig:importance}
+
+Figure~\ref{fig:importance} shows that the battery level dominates, followed by mechanical
+condition. This is consistent with the physics: the reserve constraint is the tightest of the four,
+and payload and temperature influence the outcome partly through their effect on energy consumption
+rather than only directly.
+
+\section{An Honest Statement of What the Model Means}
+The accuracy figures above describe how well the model reproduces the behaviour of the generator
+that produced its training data. They do not describe how well it predicts the behaviour of a real
+robot, because it was never trained on one. This is stated plainly because presenting the figure as
+evidence of real-world predictive power would be misleading.
+
+What the component demonstrates is the integration of a learned model into a decision workflow: the
+construction of features from live system state, the consultation of a model as one input among
+several, a policy able to overrule it, and a defined behaviour when it is unavailable. Should real
+run data become plentiful, the file format is already identical and the model could be retrained on
+it without any change to the rest of the system.
+
+% ============================================================
+\chapter{Testing and Validation}
+\label{ch:testing}
+% ============================================================
+
+\section{Strategy}
+Testing is organised in three layers, in increasing order of realism and decreasing order of speed.
+
+\uploadedfigure{Figures/fig-test-pyramid.png}{0.68\textwidth}
+{The three layers of the test strategy.}{fig:pyramid}
+
+\textbf{Unit tests} exercise pure logic: the condition model, the admission policy and the database.
+They require no simulator and no network.
+
+\textbf{Integration tests} exercise the joins between components: an HTTP request producing a
+database row and a message to the robot, a status message from the robot updating an order and
+recording history, telemetry updating the stored condition. The robotic middleware and the
+prediction service are replaced by fakes, so the tests remain fast and deterministic.
+
+\textbf{Acceptance tests} run against the complete live system with the simulator running, and
+verify physical claims against the simulator rather than against status fields.
+
+\section{Automated Test Suites}
+The automated suites contain 65 tests and run in a few seconds.
+
+\uploadedfigure{Figures/fig-test-composition.png}{0.88\textwidth}
+{Composition of the automated test suite.}{fig:testcomp}
+
+The tests are written to pin the \emph{relationships} the system depends on, not only its
+arithmetic. Examples include: a heavier payload must cost more energy and run hotter; a hot or worn
+robot must make the same job more expensive; simulating a hypothetical order must not modify the
+real robot's condition; and the classifier must not be able to approve an order that the physical
+gates rejected. If any of those relationships were inverted, the system would still run and would
+still produce plausible-looking decisions, which is exactly why they are asserted explicitly.
+
+\section{Acceptance Testing}
+The acceptance suite starts from a freshly launched system, submits real orders and checks the
+outcome against the simulator. It refuses to run if the parcels are not in their starting positions,
+because a world left over from a previous run would cause failures for the wrong reason.
+
+\uploadedfigure{Figures/fig-acceptance-results.png}{0.95\textwidth}
+{Results of the acceptance suite against the live system.}{fig:acceptance}
+
+\begin{longtable}{@{}p{0.10\textwidth}p{0.40\textwidth}p{0.44\textwidth}@{}}
+\toprule
+\textbf{Req.} & \textbf{Check} & \textbf{Measured result} \\
+\midrule
+\endhead
+SETUP & System ready and parcels in place & Robot connected, six parcels on their shelves \\
+UC5 & Catalogue and layout served from the database & Six products, two destinations, weights from
+0.3 to 4.5 kg \\
+UC9 & Preview returns a cost and a verdict & 8.6 m, 6.11 Wh, peak 57.5 C, accepted \\
+NFR1 & Preview responds within two seconds & 368 ms \\
+C2 & The classifier is consulted inside the workflow & Decision attributed to the model \\
+NFR3 & Pages render server-side with no JavaScript & All pages returned successfully, no scripts \\
+UC1 & An order can be submitted by product identifier & Accepted, predicted 3.71 Wh \\
+UC2 & An order can be tracked to a terminal state & Completed \\
+UC4 & The parcel is physically delivered & 0.65 m from the bay, moved 2.91 m, confirmed in the
+simulator \\
+FR10 & Condition is tracked & Battery, temperature and condition all reported \\
+FR12 & The run is logged for training & Log file written with the expected schema \\
+FR5 & An unserviceable order is refused with a reason & Refused, ``out of stock'' \\
+FR6 & Orders are served oldest first & The earlier order started first \\
+FR8 & A failing grab is retried three times & Failed after exactly three attempts, robot returned
+to the station \\
+UC6 & Analytics agree with the orders table & Counts matched \\
+\bottomrule
+\caption{Acceptance results, all fifteen checks passing.}
+\label{tab:acceptance}
+\end{longtable}
+
+\section{Measured Results}
+
+\subsection{Delivery Accuracy}
+Every delivery was measured by reading the parcel's position from the simulator and comparing it
+with the bay.
+
+\uploadedfigure{Figures/fig-delivery-accuracy.png}{0.88\textwidth}
+{Measured delivery distances against the acceptance tolerance.}{fig:accuracy}
+
+The measurements cluster between 0.59 and 0.77 metres, comfortably inside the tolerance but far
+from perfect. The cause is discussed in Chapter~\ref{ch:limitations}.
+
+\subsection{Prediction Quality}
+Because the admission estimate is stored on each order, the predicted route length can be compared
+with the distance actually travelled.
+
+\uploadedfigure{Figures/fig-predicted-vs-actual.png}{0.56\textwidth}
+{Predicted against measured route length.}{fig:predvsactual}
+
+The predictions are consistently slightly longer than the measured distances, which is expected: the
+estimate is a straight-line calculation between waypoints, and the planned path is close to but not
+exactly straight.
+
+\subsection{Response Time}
+The order preview, which includes resolving the product, computing the route, simulating the
+condition model forward and calling the prediction service over HTTP, was measured at 368 and 420
+milliseconds in two separate runs, against a requirement of two seconds.
+
+% ============================================================
+\chapter{System Evolution}
+\label{ch:evolution}
+% ============================================================
+
+The system was delivered in two versions, and the reason for the second one is worth a short
+explanation.
+
+The first version was a complete and working delivery robot. It could accept a request over the
+network, navigate a warehouse, pick up a parcel, deliver it and report the result, and it verified
+its deliveries against the simulator. As a first version it did its job: it proved that the
+navigation, the manipulation and the web interface could be made to work together, and it produced
+the environment and the verification discipline that the second version inherited.
+
+Its limitations became clear once the requirements were examined more carefully. The way work was
+requested did not match how a warehouse actually operates, and the information the system held
+about itself was too thin to support any real decision-making: the robot could carry out an order,
+but it had no basis on which to judge whether it should. Some of the machinery it contained was also
+more elaborate than the behaviour it produced justified.
+
+Rather than adding to that structure, the decision was taken to build a second version around the
+missing idea: that the system should understand its own physical state well enough to decide
+whether a job is possible. This affected the data model, the interface and the robot's software, and
+patching those changes into the existing structure would have produced something harder to explain
+than a clean second version.
+
+The second version resolves those limitations. Work is requested the way a warehouse requests it,
+against a catalogue rather than against coordinates. The robot maintains a model of its own
+condition and records it. Every order passes through a decision that can refuse it, with a reason.
+The interface is simpler than before while showing more of what matters. The problems of the first
+version are not present in the second, and the parts of the first version that had proved
+themselves, particularly the environment design and the verification discipline, were carried
+forward unchanged.
+
+% ============================================================
+\chapter{Limitations and Future Work}
+\label{ch:limitations}
+% ============================================================
+
+\section{Current Limitations}
+
+\textbf{Delivery accuracy is between roughly 0.6 and 0.8 metres.} The dominant cause is the
+simulated gripper. The detachable joint binds the parcel wherever it happens to be lying at the
+moment of the grab, which is often some distance off centre, and releases it at that same offset.
+The parking tolerance of the navigation system is a secondary contributor. A more capable gripper,
+or an alignment step before grabbing, would be the way to improve it.
+
+\textbf{The catalogue weight is not the simulated mass of the parcel.} The parcels in the simulator
+are light and have very low friction. That setting is load-bearing: with normal friction a dragged
+parcel resisted enough for the navigation system's progress checker to abort the goal, and delivery
+success improved dramatically when it was reduced. The catalogue weight therefore drives the energy
+model and the classifier but not the physics of the simulation. This is a deliberate simplification
+and is recorded as one.
+
+\textbf{Reliability depends on available processing power.} On a heavily loaded machine, navigation
+goals abort and localization degrades. This is a limit of running a physics simulation, a navigation
+stack and a web application on one machine, not a defect in the application logic.
+
+\textbf{Cancelling an order does not stop a robot that has already started.} The cancellation is
+recorded in the database, but the order was handed to the robot when it was accepted, and the robot
+completes it. A proper fix requires a cancellation channel to the robot.
+
+\textbf{The map is fixed and known in advance.} The system does not build a map of an unknown
+environment.
+
+\textbf{The classifier is trained on generated data} and therefore reflects the assumptions of the
+generator rather than the behaviour of a real robot.
+
+\section{Future Work}
+The most valuable next step would be an alignment step before grabbing, so that the parcel is always
+taken at a known offset; this would address the largest source of delivery error directly. A
+cancellation channel to the robot would close the gap described above. Collecting enough real runs
+to retrain the classifier on measured rather than generated data would turn the machine-learning
+component from a demonstration of a workflow into a genuine predictor, and requires no change to the
+rest of the system because the file format is already shared. Finally, supporting more than one
+robot would make the admission decision considerably more interesting, since it would then have to
+choose which robot should take a job as well as whether the job is possible at all.
+
+% ============================================================
+\chapter{Conclusion}
+% ============================================================
+
+RoboFetch is a simulated warehouse delivery robot that decides whether it can perform a job before
+accepting it. It satisfies the fifteen functional and six non-functional requirements set out in
+Chapter~\ref{ch:requirements}, demonstrated by 65 automated tests and by fifteen acceptance checks
+run against the complete live system, in which every physical claim was verified against the
+simulator rather than against the software's own reports.
+
+Measured against the categories the course requires, the system provides nine data-oriented
+functionalities built on a normalised relational schema, integrates eight third-party services
+ranging from a navigation stack to a machine-learning library, and contributes three complex
+features of its own: a coupled model of the robot's physical condition, a multi-step admission
+workflow that consults a learned model without being governed by it, and a verification mechanism
+that cross-checks the software's claims against the physics engine.
+
+Three lessons stand out from building it. The first is that a report of success is not evidence of
+success; the incident in which the system confidently reported three deliveries that never happened
+changed how the entire project was tested. The second is that testability is a consequence of
+architecture rather than an activity performed at the end: the decision logic is fast to test
+because it was written to depend on nothing. The third is that removing a feature can improve a
+system; two elaborate components were deleted because the behaviour they produced did not justify
+the complexity they carried, and the result is easier both to explain and to trust.
+
+% ============================================================
+\appendix
+% ============================================================
+
+\chapter{Requirements Traceability}
+\label{app:traceability}
+
+\begin{longtable}{@{}p{0.08\textwidth}p{0.34\textwidth}p{0.50\textwidth}@{}}
+\toprule
+\textbf{Req.} & \textbf{Where it is satisfied} & \textbf{How it is verified} \\
+\midrule
+\endhead
+FR1 & Product table and its access methods & Unit tests on the catalogue; acceptance check UC5 \\
+FR2 & Layout tables & Unit tests on seeding and spacing; acceptance check UC5 \\
+FR3 & Order endpoint and order form & Integration test; acceptance check UC1 \\
+FR4 & Preview endpoint and preview page & Integration test; acceptance check UC9 \\
+FR5 & Policy gates in the admission workflow & Unit tests per gate; acceptance check FR5 \\
+FR6 & Oldest-first selection in the task manager & Unit test on ordering; acceptance check FR6 \\
+FR7 & Task manager execution sequence & Acceptance checks UC2 and UC4 \\
+FR8 & Bounded retry loop in the task manager & Acceptance check FR8 \\
+FR9 & Verification step against the simulator & Acceptance check UC4 \\
+FR10 & Condition monitor and telemetry tables & Unit tests on the model; acceptance check FR10 \\
+FR11 & Idle timer and return-to-station behaviour & Observed in the duty-state record \\
+FR12 & Per-run log writer & Acceptance check FR12 \\
+FR13 & Order history page and endpoint & Integration test \\
+FR14 & Catalogue and layout access methods & Unit tests \\
+FR15 & Statistics query & Unit test; acceptance check UC6 \\
+NFR1 & Timeout on the prediction client & Acceptance check NFR1, measured at 368 ms \\
+NFR2 & Fallback path in the admission workflow & Unit test with an unreachable service \\
+NFR3 & Server-side templates & Acceptance check NFR3 \\
+NFR4 & One-second publication interval & Telemetry record \\
+NFR5 & Ground-truth comparison & Acceptance check UC4 \\
+NFR6 & Generator and trainer kept outside the build & The running system loads only the exported
+model \\
+\bottomrule
+\caption{Traceability from requirements to implementation and verification.}
+\end{longtable}
+
+\chapter{Running the System}
+
+The system starts from a single command, which stops anything left over from a previous run,
+builds the workspace, and launches the simulator, the navigation stack, the robot nodes, the web
+service and the prediction service.
+
+Once the task manager reports that it is localized and ready, the interface is available in a
+browser on the host machine. Orders can also be placed from a terminal using the provided script,
+which shows the admission decision, follows the order through every state, and finishes by
+comparing the parcel's real position with the delivery bay.
+
+The automated tests run without the simulator. The acceptance suite requires a freshly launched
+system and checks this itself before starting.
+
+\chapter{Figure Index}
+
+\begin{longtable}{@{}p{0.10\textwidth}p{0.84\textwidth}@{}}
+\toprule
+\textbf{Figure} & \textbf{Content} \\
+\midrule
+\endhead
+\ref{fig:warehouse} & Warehouse layout drawn to scale \\
+\ref{fig:balance} & Balance across the three functionality categories \\
+\ref{fig:waterfall} & Phases of the development process \\
+\ref{fig:usecase} & Use case diagram \\
+\ref{fig:domainclass} & Domain class diagram \\
+\ref{fig:dbclass} & Database schema as a UML class diagram \\
+\ref{fig:er} & Entity-relationship diagram \\
+\ref{fig:layers} & Layered architecture \\
+\ref{fig:component} & Component diagram \\
+\ref{fig:deployment} & Deployment diagram \\
+\ref{fig:deps} & Dependency direction \\
+\ref{fig:sequence} & Sequence diagram of a complete order \\
+\ref{fig:payloadenergy} & Energy per metre against payload \\
+\ref{fig:statemachine} & Duty-cycle state machine \\
+\ref{fig:battery} & Battery over one session \\
+\ref{fig:temperature} & Motor temperature over one session \\
+\ref{fig:duty} & Duty states over one session \\
+\ref{fig:wear} & Mechanical condition over one session \\
+\ref{fig:activity} & Activity diagram of the admission workflow \\
+\ref{fig:mlpipeline} & Machine-learning pipeline \\
+\ref{fig:mlbalance} & Class balance of the training set \\
+\ref{fig:confusion} & Confusion matrix \\
+\ref{fig:importance} & Feature importance \\
+\ref{fig:pyramid} & Test strategy \\
+\ref{fig:testcomp} & Composition of the test suite \\
+\ref{fig:acceptance} & Acceptance results \\
+\ref{fig:accuracy} & Delivery accuracy \\
+\ref{fig:predvsactual} & Predicted against measured route length \\
+\bottomrule
+\end{longtable}
+
+\end{document}

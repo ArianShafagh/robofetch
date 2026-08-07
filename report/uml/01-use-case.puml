@@ -1,0 +1,49 @@
+' =====================================================================
+' RoboFetch - Use case diagram
+' Two human actors plus the simulation stack as a supporting actor.
+' Source: docs/proposal.md section 4, requirements FR1-FR15.
+' =====================================================================
+@startuml
+skinparam backgroundColor White
+skinparam shadowing false
+skinparam usecase {
+  BackgroundColor #FBFCFE
+  BorderColor #34495E
+}
+skinparam actorStyle awesome
+
+title RoboFetch Use Cases
+
+left to right direction
+
+actor "Client" as client
+actor "Administrator" as admin
+actor "Nav2 + Gazebo\n(supporting system)" as sim
+
+rectangle "RoboFetch" {
+  usecase "UC1\nBrowse product catalogue" as UC1
+  usecase "UC2\nRequest order preview" as UC2
+  usecase "UC3\nConfirm an order" as UC3
+  usecase "UC4\nView order history" as UC4
+  usecase "UC5\nExecute a delivery" as UC5
+  usecase "UC6\nManage products and layout" as UC6
+  usecase "UC7\nView robot condition" as UC7
+  usecase "UC8\nView analytics" as UC8
+  usecase "UC9\nPredict order feasibility" as UC9
+}
+
+client --> UC1
+client --> UC2
+client --> UC3
+client --> UC4
+
+admin --> UC6
+admin --> UC7
+admin --> UC8
+
+UC2 ..> UC9 : <<include>>
+UC3 ..> UC2 : <<include>>
+UC3 ..> UC5 : <<trigger>>
+UC5 --> sim
+
+@enduml

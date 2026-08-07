@@ -1,0 +1,165 @@
+' =====================================================================
+' RoboFetch - Database schema as a UML class diagram
+'
+' Every table in robofetch.db is shown as a class with the <<table>>
+' stereotype. Columns carry their SQL types; PK and FK are marked.
+' Source of truth: src/robofetch_bridge/robofetch_bridge/db.py (SCHEMA)
+'
+' To edit: paste into https://www.plantuml.com/plantuml or use the
+' PlantUML extension for VS Code, then export a PNG.
+' =====================================================================
+@startuml
+skinparam backgroundColor White
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam nodesep 55
+skinparam ranksep 55
+skinparam class {
+  BackgroundColor #FBFCFE
+  BorderColor #34495E
+  ArrowColor #34495E
+  FontSize 12
+  AttributeFontSize 11
+}
+hide circle
+
+title RoboFetch Database Schema (UML class view)
+
+' ------------------------------------------------ warehouse layout
+package "Warehouse layout" #F4F7FB {
+
+  class shelves <<table>> {
+    <<PK>> shelf_id : TEXT
+    --
+    centre_x : REAL
+    centre_y : REAL
+  }
+
+  class pick_points <<table>> {
+    <<PK>> pick_point_id : TEXT
+    --
+    <<FK>> shelf_id : TEXT
+    x : REAL
+    y : REAL
+  }
+
+  class delivery_points <<table>> {
+    <<PK>> delivery_id : TEXT
+    --
+    name : TEXT
+    x : REAL
+    y : REAL
+  }
+
+  class station <<table>> {
+    <<PK>> station_id : TEXT
+    --
+    x : REAL
+    y : REAL
+  }
+}
+
+' ------------------------------------------------------- catalogue
+package "Catalogue and orders" #FBF6F0 {
+
+  class products <<table>> {
+    <<PK>> product_id : TEXT
+    --
+    name : TEXT
+    category : TEXT
+    weight_kg : REAL
+    stock : INTEGER
+    <<FK>> shelf_id : TEXT
+    <<FK>> pick_point_id : TEXT
+    model_name : TEXT
+  }
+
+  class orders <<table>> {
+    <<PK>> id : INTEGER
+    --
+    <<FK>> product_id : TEXT
+    <<FK>> delivery_id : TEXT
+    status : TEXT
+    attempts : INTEGER
+    detail : TEXT
+    .. admission estimate ..
+    estimated_distance_m : REAL
+    estimated_energy_wh : REAL
+    estimated_seconds : REAL
+    decision : TEXT
+    decision_reason : TEXT
+    decided_by : TEXT
+    .. lifecycle ..
+    created_at : REAL
+    completed_at : REAL
+  }
+
+  class delivery_history <<table>> {
+    <<PK,FK>> order_id : INTEGER
+    --
+    duration_s : REAL
+    distance_m : REAL
+    energy_wh : REAL
+    payload_kg : REAL
+    outcome : TEXT
+  }
+}
+
+' --------------------------------------------------- robot condition
+package "Robot condition" #F2F8F3 {
+
+  class robot_telemetry <<table>> {
+    <<PK>> id : INTEGER
+    --
+    ts : REAL
+    run_id : TEXT
+    order_id : INTEGER
+    battery_percent : REAL
+    temperature_c : REAL
+    condition_percent : REAL
+    payload_kg : REAL
+    motor_load : REAL
+    speed : REAL
+    cumulative_distance_m : REAL
+    state : TEXT
+  }
+
+  class robot_state <<table>> {
+    <<PK>> id : INTEGER = 1
+    --
+    battery_percent : REAL
+    temperature_c : REAL
+    condition_percent : REAL
+    payload_kg : REAL
+    motor_load : REAL
+    cumulative_distance_m : REAL
+    uptime_s : REAL
+    state : TEXT
+    run_id : TEXT
+    last_update : REAL
+  }
+}
+
+' ------------------------------------------------------ associations
+shelves "1" -- "2" pick_points : holds >
+shelves "1" -- "0..*" products : stores >
+pick_points "1" -- "0..1" products : reached from >
+products "1" -- "0..*" orders : requested in >
+delivery_points "1" -- "0..*" orders : delivered to >
+orders "1" -- "0..1" delivery_history : recorded as >
+
+note bottom of station
+  Single-row configuration table.
+  Intentionally unrelated: the station
+  is a property of the warehouse, not
+  of any order.
+end note
+
+note bottom of robot_state
+  Single-row table holding the CURRENT
+  condition, kept separate from the
+  append-only telemetry history so the
+  web pages can read it in one query.
+end note
+
+@enduml

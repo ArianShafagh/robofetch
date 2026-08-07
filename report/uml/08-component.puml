@@ -1,0 +1,85 @@
+' =====================================================================
+' RoboFetch - Component diagram
+' Shows the nine packages, their interfaces and the direction of every
+' dependency. Dependencies point downward: nothing in a lower layer
+' knows about a higher one.
+' =====================================================================
+@startuml
+skinparam backgroundColor White
+skinparam shadowing false
+skinparam component {
+  BackgroundColor #FBFCFE
+  BorderColor #34495E
+  ArrowColor #34495E
+}
+skinparam packageStyle rectangle
+
+title RoboFetch Component Architecture
+
+package "Presentation" #EEF3FA {
+  [Browser] as BR
+  [robofetch_web\nJinja2 templates + CSS] as WEB
+}
+
+package "Application" #F4F7FB {
+  [robofetch_bridge\nFastAPI app] as APP
+  [admission.py\ncost + policy gates] as ADM
+  [db.py\nrepository] as DB
+  [predictor.py\nAI client] as PRED
+  [ros_link.py\nrclpy bridge] as LINK
+  database "robofetch.db" as SQLITE
+}
+
+package "AI service" #FBF6F0 {
+  [robofetch_ai\nfeasibility classifier] as AI
+  artifact "model.joblib" as MODEL
+}
+
+package "Robot logic" #F2F8F3 {
+  [task_manager] as TM
+  [robot_state_node\ncondition model] as RSN
+  [gripper_node] as GN
+  [robot_model.py\nshared physics] as RM
+  [robofetch_interfaces\nGrab.srv] as IFACE
+}
+
+package "Robot platform (third party)" #F7F2F7 {
+  [Nav2] as NAV
+  [Gazebo Harmonic] as GZ
+  [ros_gz_bridge] as BRIDGE
+  [robofetch_description\nURDF] as URDF
+  [robofetch_gazebo\nworld + map] as WORLD
+}
+
+BR --> WEB : HTTP form posts
+WEB --> APP : rendered by
+APP --> ADM
+APP --> DB
+APP --> LINK
+ADM --> PRED
+ADM ..> RM : imports
+DB --> SQLITE
+PRED --> AI : HTTP :8001
+AI --> MODEL
+
+LINK --> TM : /orders/new
+TM --> LINK : /orders/status
+RSN --> LINK : /robot/telemetry
+RSN ..> RM : imports
+TM --> GN : Grab service
+GN ..> IFACE
+TM --> NAV : NavigateToPose
+GN --> BRIDGE : attach / detach / state
+NAV --> BRIDGE : scan, odom, cmd_vel, tf
+BRIDGE --> GZ
+URDF --> GZ
+WORLD --> GZ
+
+note right of RM
+  Imported by the robot node, the web
+  tier and the disposable data generator,
+  so there is exactly one definition of
+  the physics in the whole system.
+end note
+
+@enduml

@@ -1,0 +1,46 @@
+' =====================================================================
+' RoboFetch - State machine: the robot duty cycle (complex feature C1)
+' Health states outrank activity: an overheated robot is in COOLDOWN
+' whatever the task manager believes it is doing.
+' Source: robofetch_core/robot_state_node.py (_duty_state), task_manager.py
+' =====================================================================
+@startuml
+skinparam backgroundColor White
+skinparam shadowing false
+skinparam state {
+  BackgroundColor #FBFCFE
+  BorderColor #34495E
+  ArrowColor #34495E
+}
+
+title Robot Duty-Cycle State Machine
+
+[*] --> CHARGING : boots docked at the station
+
+CHARGING --> IDLE : battery at ready level
+IDLE --> WORKING : an accepted order is dequeued
+IDLE --> RETURNING : idle timeout expires
+WORKING --> RETURNING : order finished (delivered or failed)
+WORKING --> COOLDOWN : temperature reaches the limit
+COOLDOWN --> RETURNING : temperature falls below resume level
+RETURNING --> CHARGING : station reached
+RETURNING --> FAULT : station unreachable
+CHARGING --> IDLE : recharged
+IDLE --> FAULT : condition below the maintenance floor
+FAULT --> [*]
+
+note right of COOLDOWN
+  Entered from the measured
+  temperature, not from a command.
+  Admission control reads this state
+  and refuses new work while it holds.
+end note
+
+note left of RETURNING
+  Reached automatically after the idle
+  timeout, so the robot parks and
+  recharges instead of stopping wherever
+  the last delivery left it.
+end note
+
+@enduml

@@ -1,0 +1,92 @@
+[
+  {
+    "requirement": "SETUP",
+    "description": "API up, robot connected, all 6 parcels on their shelves",
+    "passed": true,
+    "evidence": "database=/home/robojazzy/robofetch_ws/robofetch.db, AI=http://localhost:8001"
+  },
+  {
+    "requirement": "UC5",
+    "description": "catalogue and layout are served from the database",
+    "passed": true,
+    "evidence": "6 products, 2 destinations, weights [0.3, 0.6, 1.1, 1.8, 3.2, 4.5]"
+  },
+  {
+    "requirement": "UC9",
+    "description": "order preview returns a cost and a verdict",
+    "passed": true,
+    "evidence": "8.6 m, 6.11 Wh, peak 57.5 C -> accepted (by model)"
+  },
+  {
+    "requirement": "NFR1",
+    "description": "preview (including the ML call) responds within 2 s",
+    "passed": true,
+    "evidence": "368 ms"
+  },
+  {
+    "requirement": "C2",
+    "description": "the classifier is consulted inside the admission workflow",
+    "passed": true,
+    "evidence": "ai_service={'url': 'http://localhost:8001', 'reachable': True, 'error': None}, decided_by=model"
+  },
+  {
+    "requirement": "NFR3",
+    "description": "all pages render server-side with no JavaScript",
+    "passed": true,
+    "evidence": "/ -> 200, /orders -> 200, /robot -> 200"
+  },
+  {
+    "requirement": "UC1",
+    "description": "an order can be submitted by product ID",
+    "passed": true,
+    "evidence": "order 1 for SKU-1001, accepted by model, predicted 3.71 Wh"
+  },
+  {
+    "requirement": "UC2",
+    "description": "an order can be tracked to a terminal state",
+    "passed": true,
+    "evidence": "order 1 -> completed: delivered (0.64 m from target)"
+  },
+  {
+    "requirement": "UC4",
+    "description": "the parcel is physically delivered (Gazebo ground truth)",
+    "passed": true,
+    "evidence": "parcel_1 at (-3.09, -1.56), 0.65 m from the bay, moved 2.91 m"
+  },
+  {
+    "requirement": "FR10",
+    "description": "battery, temperature and condition are tracked",
+    "passed": true,
+    "evidence": "battery 67.7%, temp 50.8 C, condition 99.76%, state=idle"
+  },
+  {
+    "requirement": "FR12",
+    "description": "the run is logged to CSV for ML training",
+    "passed": true,
+    "evidence": "run_20260807_123619.csv: 34 samples"
+  },
+  {
+    "requirement": "FR5",
+    "description": "an order the robot cannot serve is refused, with a reason",
+    "passed": true,
+    "evidence": "status=refused, reason='SKU-1002 is out of stock'"
+  },
+  {
+    "requirement": "FR6",
+    "description": "orders are served oldest-first (FIFO)",
+    "passed": true,
+    "evidence": "submitted [3, 4], started [3, 4] - the earlier order ran first"
+  },
+  {
+    "requirement": "FR8",
+    "description": "a failing grab is retried 3 times, then the order fails",
+    "passed": true,
+    "evidence": "order 5 -> failed after 3 attempts: could not grab parcel_6 in 3 attempts; returning to station"
+  },
+  {
+    "requirement": "UC6",
+    "description": "analytics agree with the orders table",
+    "passed": true,
+    "evidence": "reported 3/5 completed and 1 refused; counted 3 and 1; rate=0.75"
+  }
+]

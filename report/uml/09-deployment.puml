@@ -1,0 +1,85 @@
+' =====================================================================
+' RoboFetch - Deployment diagram
+' Everything runs on one WSL2 host. The browser is the only component
+' outside it, which is deliberate: serving the UI over HTTP sidesteps
+' the WSLg GUI problems entirely.
+' =====================================================================
+@startuml
+skinparam backgroundColor White
+skinparam shadowing false
+skinparam node {
+  BackgroundColor #FBFCFE
+  BorderColor #34495E
+}
+skinparam artifact {
+  BackgroundColor #FDFEFF
+  BorderColor #7F8C8D
+}
+
+title RoboFetch Deployment
+
+node "Windows 11 host" #EEF3FA {
+  artifact "Web browser\nlocalhost:8000" as BROWSER
+}
+
+node "WSL2 - Ubuntu 24.04 - ROS 2 Jazzy" #F4F7FB {
+
+  node "Process: uvicorn (:8000)" as P1 {
+    artifact "FastAPI application" as APP
+    artifact "rclpy bridge node\n(background thread)" as LINK
+  }
+
+  node "Process: uvicorn (:8001)" as P2 {
+    artifact "Feasibility classifier" as AI
+  }
+
+  node "Process: task_manager" as P3 {
+    artifact "Order execution" as TM
+  }
+
+  node "Process: robot_state_node" as P4 {
+    artifact "Condition model" as RSN
+  }
+
+  node "Process: gripper_node" as P5 {
+    artifact "Grab / release services" as GN
+  }
+
+  node "Nav2 processes" as P6 {
+    artifact "amcl, planner, controller,\nbt_navigator, costmaps" as NAV
+  }
+
+  node "Process: gz sim" as P7 {
+    artifact "Physics, lidar,\nDetachableJoint" as GZ
+  }
+
+  node "Process: ros_gz_bridge" as P8 {
+    artifact "Topic translation" as BRIDGE
+  }
+
+  artifact "robofetch.db\n(SQLite file)" as DBFILE
+  artifact "logs/run_*.csv" as LOGS
+}
+
+BROWSER --> APP : HTTP
+APP --> DBFILE
+APP --> AI : HTTP
+APP --> LINK
+LINK <--> TM : /orders/new\n/orders/status
+RSN --> LINK : /robot/telemetry
+RSN --> LOGS
+TM <--> NAV : NavigateToPose
+TM --> GN : Grab.srv
+NAV <--> BRIDGE : scan, odom, cmd_vel, tf
+GN <--> BRIDGE : attach, detach, state
+BRIDGE <--> GZ
+
+note bottom of P2
+  A separate process on its own port,
+  on purpose: the main API has to keep
+  working when this is down, and a
+  network boundary makes that failure
+  real rather than theoretical.
+end note
+
+@enduml

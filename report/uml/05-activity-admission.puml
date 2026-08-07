@@ -1,0 +1,70 @@
+' =====================================================================
+' RoboFetch - Activity diagram: order admission (complex feature C2)
+'
+' The gate ORDER is the point of this diagram. The physical checks run
+' first, so the classifier can only ever refuse an order the physics
+' already allowed - it can never approve one they rejected.
+' Source: robofetch_bridge/admission.py (decide)
+' =====================================================================
+@startuml
+skinparam backgroundColor White
+skinparam shadowing false
+skinparam activity {
+  BackgroundColor #FBFCFE
+  BorderColor #34495E
+  ArrowColor #34495E
+  DiamondBackgroundColor #FDF6E3
+  DiamondBorderColor #34495E
+}
+
+title Order Admission Workflow
+
+start
+:Receive product_id and delivery_id;
+:Look up product\n(weight, pick point);
+:Look up destination bay;
+:Compute the three route legs\nrobot to pick, pick to bay,\nbay back to station;
+:Estimate energy with the\ndeterministic formula;
+:Forward-simulate the condition model\nto find the peak temperature;
+:Read the live robot condition;
+
+if (stock available?) then (no)
+  :REFUSE\n"out of stock";
+  stop
+endif
+
+if (battery after the job\nand the return leg\nstays above the reserve?) then (no)
+  :REFUSE\n"could not return to the station";
+  stop
+endif
+
+if (predicted peak temperature\nbelow the limit?) then (no)
+  :REFUSE\n"would overheat";
+  stop
+endif
+
+if (condition above the\nmaintenance floor?) then (no)
+  :REFUSE\n"maintenance required";
+  stop
+endif
+
+partition "Learned verdict" {
+  if (AI service reachable?) then (yes)
+    :Build the feature vector\n(battery, temperature, condition,\npayload, route distance);
+    :Call the classifier;
+    if (classifier says feasible?) then (no)
+      :REFUSE\n"predicted infeasible";
+      stop
+    endif
+    :decided_by = model;
+  else (no)
+    :Fall back to the deterministic\nmodel alone;
+    :decided_by = policy;
+  endif
+}
+
+:ACCEPT\nstore the order with its estimate;
+:Publish to the robot;
+stop
+
+@enduml

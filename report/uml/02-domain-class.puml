@@ -1,0 +1,128 @@
+' =====================================================================
+' RoboFetch - Domain class diagram (the runtime software objects)
+' Distinct from 07_database_class.puml, which shows the persisted tables.
+' Sources: robofetch_core/robot_model.py, robofetch_bridge/admission.py,
+'          db.py, ros_link.py, predictor.py, task_manager.py
+' =====================================================================
+@startuml
+skinparam backgroundColor White
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam class {
+  BackgroundColor #FBFCFE
+  BorderColor #34495E
+  ArrowColor #34495E
+}
+
+title RoboFetch Domain Model (runtime classes)
+
+package "robofetch_core (robot logic)" #F2F8F3 {
+
+  class RobotCondition {
+    +battery_percent : float
+    +temperature_c : float
+    +condition_percent : float
+    +cumulative_distance_m : float
+    +cumulative_energy_wh : float
+    +uptime_s : float
+    --
+    +step(dt, distance_m, payload_kg, motor_load, docked)
+    +as_dict() : dict
+  }
+
+  class RobotModel <<module>> {
+    +energy_wh(distance, payload, temp, condition) : float
+    +efficiency_penalty(temp, condition) : float
+    +duration_s(distance) : float
+    +simulate_route(condition, distance, payload) : (RobotCondition, float)
+    +route_legs(robot, pick, delivery, station) : dict
+  }
+
+  class RobotStateNode {
+    -condition : RobotCondition
+    -run_id : str
+    -payload_kg : float
+    --
+    -_on_odom(msg)
+    -_on_activity(msg)
+    -_duty_state() : str
+    -_tick()
+  }
+
+  class TaskManager {
+    -station : tuple
+    -_queue : list
+    --
+    +execute_order(order) : bool
+    +navigate_to(x, y, yaw) : bool
+    +return_to_station() : bool
+    -_serve_queue()
+  }
+
+  class GripperNode {
+    -attach_state : dict
+    -held_item : str
+    --
+    +on_grab(request, response)
+    +on_release(request, response)
+    -_is_held(item) : bool
+  }
+}
+
+package "robofetch_bridge (web tier)" #F4F7FB {
+
+  class Admission <<module>> {
+    +estimate(product, delivery, station, state) : dict
+    +features(product, cost, state) : dict
+    +decide(product, delivery, station, state, predictor) : tuple
+  }
+
+  class Database {
+    -path : str
+    --
+    +list_products() : list
+    +get_product(id) : dict
+    +create_order(product, delivery, estimate) : dict
+    +next_pending_order() : dict
+    +update_robot_state(**fields)
+    +record_telemetry(sample)
+    +analytics() : dict
+  }
+
+  class Predictor {
+    -base_url : str
+    --
+    +__call__(features) : tuple
+    +status() : dict
+  }
+
+  class RosLink {
+    +order_pub : Publisher
+    +robot_xy : tuple
+    +telemetry : dict
+    --
+    +submit_order(id, product, pickup, dropoff)
+    -_handle_status(msg)
+    -_handle_telemetry(msg)
+  }
+}
+
+package "robofetch_ai" #FBF6F0 {
+  class FeasibilityService {
+    -model : Pipeline
+    --
+    +predict(features) : dict
+    +health() : dict
+  }
+}
+
+RobotStateNode *-- RobotCondition
+RobotStateNode ..> RobotModel : uses
+Admission ..> RobotModel : uses
+Admission ..> Predictor : consults
+Predictor ..> FeasibilityService : HTTP
+Database <.. Admission : reads state
+RosLink <..> TaskManager : ROS topics
+TaskManager ..> GripperNode : Grab service
+
+@enduml
