@@ -5,6 +5,124 @@ solved, and what remains. Written so a fresh session (or a new person) can pick 
 
 **Last updated:** 2026-08-07 · **Status:** v2 implemented · **65 tests + 15 acceptance checks passing**
 
+## 0. START HERE — state of play and what to do next
+
+Everything below this section is reference. This section is the working state.
+
+### Where the project stands
+
+All code is committed and pushed to `git@github.com:ArianShafagh/robofetch.git` (branch `main`).
+The system works end to end and is verified: **65 pytest tests** and **15/15 acceptance checks**
+against the live simulator, with every physical claim confirmed against Gazebo rather than against
+log messages.
+
+The **written report** is complete as well: `report/RoboFetch_Software_Engineering_Report.tex`,
+about 1820 lines, 15 chapters and 2 appendices, with 33 figures — 19 generated charts, 9 UML
+diagrams and 7 screenshots of the running system. It has **never been compiled**, because LaTeX is
+not installed on this machine; it is written for Overleaf. See `report/README.md`.
+
+### THE FOUR OPEN REQUESTS — none of these are implemented yet
+
+The owner reported these and work had not started when the session ended. Constants named below
+are still at their old values; nothing has been changed.
+
+**1. Battery drains too slowly, and accepted orders must RESERVE their cost.**
+
+Two parts, and the second is the important one.
+
+*(a) Faster drain.* `CAPACITY_WH` in `src/robofetch_core/robofetch_core/robot_model.py` is
+currently `40.0`, giving roughly six deliveries per charge. The owner wants it noticeably faster.
+Reducing it to about `22.0` gives roughly three. **Changing this invalidates the trained
+classifier**, because the label in the training set depends on how much of the pack an order
+consumes. After changing it you must re-run `tools/ml/generate.py` and then `tools/ml/train.py`.
+
+*(b) Reservation — the real design gap.* Today every order is admitted against the robot's
+*current* battery and temperature. If two orders are accepted while the robot is still working,
+both are judged against the same battery, so together they can exceed what the robot actually has.
+
+The fix is an energy and thermal reservation. When an order is accepted, its predicted cost is
+committed, and the next admission decision must be taken against the *projected* state after all
+committed-but-unfinished work, not against the current reading. A workable shape:
+
+- add `estimated_peak_c` to the `orders` table (the predicted peak temperature is currently
+  computed but not stored);
+- add `Database.committed_load()` returning the summed `estimated_energy_wh` plus return energy,
+  and the maximum `estimated_peak_c`, over orders whose status is one of `pending`, `navigating`,
+  `grabbing`, `delivering`, `releasing`;
+- in `robofetch_bridge/admission.py`, before applying the gates, project the state forward:
+  `projected_battery = current - committed_energy` converted to percent, and
+  `projected_temperature = max(current_temperature, committed_peak)`. Judge the gates against that.
+
+This turns C2 into a genuine admission-control algorithm with a reservation ledger, which is
+stronger for the report as well. `docs/proposal.md` §3.4 already lists a reservation ledger as a
+candidate extension.
+
+**2. Pages should refresh every 2 seconds, and history should be cleared on every start.**
+
+`PAGE_REFRESH_SECONDS` in `src/robofetch_bridge/robofetch_bridge/app.py` is `10`; the owner wants
+`2` for `/orders` and `/robot`. Leave `/` and `/preview` without a refresh — `/preview` is the
+result of a POST and reloading it would re-submit the form.
+
+For the history: each launch should start empty. Prefer a `Database.reset_session()` that DROPs and
+recreates `orders`, `delivery_history` and `robot_telemetry`, resets the single `robot_state` row,
+and restores every product's `stock`. Dropping rather than deleting also means a schema change (such
+as the new `estimated_peak_c` column) applies cleanly without a migration. Call it from the FastAPI
+startup event so it works however the system is launched.
+
+**3. A delivered product must disappear from the list of options.**
+
+Once a parcel has been delivered it is at the bay, not on its shelf, so ordering it again sends the
+robot to an empty shelf and the order fails after three grab attempts. The owner wants it removed
+from the choices.
+
+Cleanest fix using machinery that already exists: when an order completes, set that product's
+`stock` to 0. Admission gate one already refuses an out-of-stock product, so the refusal path is
+free. Then filter the order-form dropdown and `/api/products` to products with `stock > 0`.
+Remember that `reset_session()` above must restore stock, or a restart would leave nothing
+orderable.
+
+**4. A parcel stayed attached to the gripper and was dragged for the whole run.**
+
+The owner saw a parcel attach and never detach, so the robot carried it around for the rest of the
+session. This is the worst of the four because it corrupts every subsequent delivery.
+
+`gripper_node.on_release` publishes one detach, waits `settle_time`, and then checks the joint's
+reported state. If the detach does not take, it reports failure — but the parcel is still attached,
+and `task_manager.execute_order` then fails the order and drives home **still carrying it**.
+
+Two things to do. In `on_release`, retry the detach (three attempts, verifying the joint state
+between them) instead of publishing once. And in the task manager, treat a failed release as
+serious: retry, and if the parcel is still attached, do not simply continue — the robot is in a
+state where every later order will be wrong. Note that the start-up code already detaches every
+parcel once, which is why a restart clears it.
+
+### How to work on this
+
+The owner's standing preferences are in §9. The ones that matter most:
+
+- **Verify against Gazebo ground truth**, never against logs. `./scripts/order.sh SKU-3001
+  delivery_1` does this automatically and is the fastest way to check a change.
+- **Always `./scripts/stop.sh` before relaunching.**
+- **Test with the GUI as well as headless** — though note that on this machine the GUI run
+  currently cannot localize at all, because Gazebo and RViz together starve the sensor pipeline.
+  Headless is reliable; that limitation is documented in the report.
+- **End every piece of work with exact steps the owner can run themselves.**
+- The owner is learning: explain *why*, not only *what*.
+- The report must contain **no dates and no schedule timings**, and **no equations** — those were
+  explicit requests.
+
+### Quick verification after any change
+
+```bash
+cd ~/robofetch_ws && source install/setup.bash
+./robofetch_venv/bin/python -m pytest src/robofetch_core/test/ src/robofetch_bridge/test/ -q   # 65
+./scripts/stop.sh && ./scripts/run.sh --headless        # wait for "Localized and ready"
+./scripts/order.sh SKU-3001 delivery_1                  # ends with VERIFIED or NOT DELIVERED
+./robofetch_venv/bin/python scripts/acceptance.py       # 15/15, needs a fresh world
+```
+
+---
+
 > **2026-08-07 — RoboFetch v2 is implemented and verified.** Full acceptance suite passes
 > **15/15** against the live simulator, every physical claim confirmed against Gazebo ground
 > truth. 65 pytest tests pass.

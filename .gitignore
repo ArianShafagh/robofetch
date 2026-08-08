@@ -28,3 +28,6 @@ Report Example/
 
 # Downloaded tool, not source. Fetch it from plantuml.com/download if you need to re-render.
 tools/report/plantuml.jar
+
+# Report archives you zip for Overleaf - rebuild with: zip -r report.zip report/
+report*.zip
