@@ -38,6 +38,7 @@ with status `refused` and the reason - because "what did we turn away" is exactl
 question the analytics are for.
 """
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -54,7 +55,36 @@ DB_PATH = os.environ.get("ROBOFETCH_DB", os.path.expanduser("~/robofetch_ws/robo
 WEB_DIR = os.environ.get("ROBOFETCH_WEB", "")
 AI_URL = os.environ.get("ROBOFETCH_AI_URL", "http://localhost:8001")
 
-app = FastAPI(title="RoboFetch", version="2.0.0")
+# ------------------------------------------------------------------- start-up and shutdown
+# This has to sit ABOVE `app`, because FastAPI takes it as a constructor argument - so it reads
+# before `db` and `ros`, which it uses and which are built further down. That is safe: the body
+# runs when the server starts, not when this module is imported, by which point both exist.
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Every launch restores the same Gazebo world - six parcels on their shelves, the robot
+    # docked and charged - so the run starts from a clean history to match. Doing it here
+    # rather than in a launch script means it happens however the system is started.
+    db.reset_session()
+    # The pages carry no advice, so this is the only place a default password gets mentioned.
+    # Console rather than UI: it is for whoever launched the system, not for whoever is
+    # looking at it, and printing account names on a web page helps the wrong reader.
+    still_default = db.uses_default_passwords()
+    if still_default:
+        print(f"WARNING: these accounts still have their default password: "
+              f"{', '.join(still_default)}. Change them on the admin page, or set "
+              f"ROBOFETCH_ADMIN_PASSWORD / ROBOFETCH_CONTROLLER_PASSWORD before first launch.",
+              flush=True)
+    ros.start()
+    # try/finally, not a bare yield: if the server is torn down by an exception the thread must
+    # still be stopped. A surviving ROS node keeps its name on the DDS network and quietly
+    # breaks the NEXT launch - see HANDOVER 5.12.
+    try:
+        yield
+    finally:
+        ros.stop()
+
+
+app = FastAPI(title="RoboFetch", version="2.0.0", lifespan=lifespan)
 db = Database(DB_PATH)
 predictor = Predictor(AI_URL)
 
@@ -112,30 +142,8 @@ def _on_telemetry(sample):
     db.record_telemetry(sample)
 
 
+# Started and stopped by `lifespan` above.
 ros = RosThread(on_status=_on_status, on_telemetry=_on_telemetry)
-
-
-@app.on_event("startup")
-async def _startup():
-    # Every launch restores the same Gazebo world - six parcels on their shelves, the robot
-    # docked and charged - so the run starts from a clean history to match. Doing it here
-    # rather than in a launch script means it happens however the system is started.
-    db.reset_session()
-    # The pages carry no advice, so this is the only place a default password gets mentioned.
-    # Console rather than UI: it is for whoever launched the system, not for whoever is
-    # looking at it, and printing account names on a web page helps the wrong reader.
-    still_default = db.uses_default_passwords()
-    if still_default:
-        print(f"WARNING: these accounts still have their default password: "
-              f"{', '.join(still_default)}. Change them on the admin page, or set "
-              f"ROBOFETCH_ADMIN_PASSWORD / ROBOFETCH_CONTROLLER_PASSWORD before first launch.",
-              flush=True)
-    ros.start()
-
-
-@app.on_event("shutdown")
-async def _shutdown():
-    ros.stop()
 
 
 # ------------------------------------------------------------------- authentication
