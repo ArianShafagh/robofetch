@@ -3,7 +3,7 @@
 Complete state of the project: what exists, how to run it, every problem hit and how it was
 solved, and what remains. Written so a fresh session (or a new person) can pick it up cold.
 
-**Last updated:** 2026-08-18 · **Status:** v2 + all requested work · **155 tests + 26/26 acceptance checks passing** · **UNCOMMITTED**
+**Last updated:** 2026-08-18 · **Status:** v2 + all requested work · **155 tests + 26/26 acceptance checks passing** · **COMMITTED**
 
 ## 0. START HERE — state of play and what to do next
 
@@ -15,11 +15,12 @@ The system works end to end and is verified: **155 pytest tests** and **26/26 ac
 against the live simulator, with every physical claim confirmed against Gazebo rather than against
 log messages.
 
-> ### ⚠️ NOTHING IS COMMITTED
+> ### The v2 work IS committed now
 >
-> About **30 files** are modified in the working tree and none of it is in git. The last commit is
-> `68ece2d`, which predates every change described in this section. **Read `git status` and
-> `git diff` before changing anything**, and expect the owner to want a commit early.
+> Everything described in this section landed in `c920723` on `main` - the ~30-file backlog this
+> banner used to warn about is gone. The `on_event` -> `lifespan` migration that followed is in
+> `3c55716` on branch `chore/lifespan-migration`, not yet merged. **Still read `git status`
+> before changing anything**, but do not expect a mountain of uncommitted work.
 >
 > `git@github.com:ArianShafagh/robofetch.git`, branch `main`.
 
@@ -32,10 +33,10 @@ should be 26/26, and the delivery-accuracy figure should be ~0.25-0.5 m rather t
 ### What to do FIRST in a new session
 
 1. `cat HANDOVER.md` — this section.
-2. `git status` — everything below is uncommitted.
+2. `git status` — should be clean or nearly so; see the banner above.
 3. `./scripts/stop.sh --check` before launching anything (see §5.12; one stale process breaks
    every later launch).
-4. Ask the owner whether to commit before starting new work.
+4. Merge or rebase `chore/lifespan-migration` if it is still outstanding.
 
 ### The owner's working style — read this, it saves rework
 
@@ -227,7 +228,8 @@ Full detail, plus two approaches that FAILED and must not be retried, in §5.11b
 
 ### STILL OPEN — pick these up next
 
-1. **Commit.** ~30 files, nothing in git. Almost certainly the first thing to do.
+1. **Merge `chore/lifespan-migration`.** The FastAPI `on_event` -> `lifespan` migration
+   (`3c55716`); the v2 backlog itself is already committed as `c920723`.
 2. **The robot bulldozes parcels it has already delivered** — see immediately below. Not fixed;
    three candidate fixes listed, all of which change the warehouse layout figure in the report.
 3. **`/clock` runs at ~500 Hz and dominates CPU** (§5.13). Not needed for correctness — the suite
