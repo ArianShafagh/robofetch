@@ -3,7 +3,7 @@
 Complete state of the project: what exists, how to run it, every problem hit and how it was
 solved, and what remains. Written so a fresh session (or a new person) can pick it up cold.
 
-**Last updated:** 2026-08-07 · **Status:** v2 implemented · **65 tests + 15 acceptance checks passing**
+**Last updated:** 2026-08-18 · **Status:** v2 + all requested work · **155 tests + 26/26 acceptance checks passing** · **UNCOMMITTED**
 
 ## 0. START HERE — state of play and what to do next
 
@@ -11,90 +11,284 @@ Everything below this section is reference. This section is the working state.
 
 ### Where the project stands
 
-All code is committed and pushed to `git@github.com:ArianShafagh/robofetch.git` (branch `main`).
-The system works end to end and is verified: **65 pytest tests** and **15/15 acceptance checks**
+The system works end to end and is verified: **155 pytest tests** and **26/26 acceptance checks**
 against the live simulator, with every physical claim confirmed against Gazebo rather than against
 log messages.
 
-The **written report** is complete as well: `report/RoboFetch_Software_Engineering_Report.tex`,
-about 1820 lines, 15 chapters and 2 appendices, with 33 figures — 19 generated charts, 9 UML
-diagrams and 7 screenshots of the running system. It has **never been compiled**, because LaTeX is
-not installed on this machine; it is written for Overleaf. See `report/README.md`.
+> ### ⚠️ NOTHING IS COMMITTED
+>
+> About **30 files** are modified in the working tree and none of it is in git. The last commit is
+> `68ece2d`, which predates every change described in this section. **Read `git status` and
+> `git diff` before changing anything**, and expect the owner to want a commit early.
+>
+> `git@github.com:ArianShafagh/robofetch.git`, branch `main`.
 
-### THE FOUR OPEN REQUESTS — none of these are implemented yet
+The **written report** is `report/RoboFetch_Software_Engineering_Report.tex`, about 1820 lines,
+15 chapters and 2 appendices, with 33 figures. It has **never been compiled** — LaTeX is not
+installed here; it targets Overleaf. See `report/README.md`. It is now **out of date** in three
+ways: the 7 UI screenshots predate the plain redesign and the login page, the acceptance figure
+should be 26/26, and the delivery-accuracy figure should be ~0.25-0.5 m rather than 0.6-0.8 m.
 
-The owner reported these and work had not started when the session ended. Constants named below
-are still at their old values; nothing has been changed.
+### What to do FIRST in a new session
 
-**1. Battery drains too slowly, and accepted orders must RESERVE their cost.**
+1. `cat HANDOVER.md` — this section.
+2. `git status` — everything below is uncommitted.
+3. `./scripts/stop.sh --check` before launching anything (see §5.12; one stale process breaks
+   every later launch).
+4. Ask the owner whether to commit before starting new work.
 
-Two parts, and the second is the important one.
+### The owner's working style — read this, it saves rework
 
-*(a) Faster drain.* `CAPACITY_WH` in `src/robofetch_core/robofetch_core/robot_model.py` is
-currently `40.0`, giving roughly six deliveries per charge. The owner wants it noticeably faster.
-Reducing it to about `22.0` gives roughly three. **Changing this invalidates the trained
-classifier**, because the label in the training set depends on how much of the pack an order
-consumes. After changing it you must re-run `tools/ml/generate.py` and then `tools/ml/train.py`.
+- **Verify against Gazebo ground truth, never against a log line or a status field.** This is the
+  project's central rule. `./scripts/order.sh SKU-3001 delivery_1` does it automatically and ends
+  in VERIFIED or NOT DELIVERED.
+- **Measure before claiming a fix.** Two claims were made in the last session on bad measurements
+  and had to be retracted; see §5.13 for the `top` trap specifically.
+- **Do not add explanatory text to the web pages.** They show data and controls only; all guidance
+  lives in README "The web app, page by page". `test_the_pages_carry_no_advice` enforces it.
+- **The UI is deliberately plain.** No tiles, pills, cards, or decoration. Colour only where it
+  carries meaning.
+- **End every piece of work with exact steps the owner can run themselves.**
+- The owner is learning: explain *why*, not only *what*.
+- The report must contain **no dates, no schedule timings, no equations** — explicit requests.
 
-*(b) Reservation — the real design gap.* Today every order is admitted against the robot's
-*current* battery and temperature. If two orders are accepted while the robot is still working,
-both are judged against the same battery, so together they can exceed what the robot actually has.
+### THE FOUR ORIGINAL REQUESTS — all four implemented and verified
 
-The fix is an energy and thermal reservation. When an order is accepted, its predicted cost is
-committed, and the next admission decision must be taken against the *projected* state after all
-committed-but-unfinished work, not against the current reading. A workable shape:
+**1. Battery drains faster, and accepted orders RESERVE their cost. — DONE**
 
-- add `estimated_peak_c` to the `orders` table (the predicted peak temperature is currently
-  computed but not stored);
-- add `Database.committed_load()` returning the summed `estimated_energy_wh` plus return energy,
-  and the maximum `estimated_peak_c`, over orders whose status is one of `pending`, `navigating`,
-  `grabbing`, `delivering`, `releasing`;
-- in `robofetch_bridge/admission.py`, before applying the gates, project the state forward:
-  `projected_battery = current - committed_energy` converted to percent, and
-  `projected_temperature = max(current_temperature, committed_peak)`. Judge the gates against that.
+*(a)* `CAPACITY_WH` in `robot_model.py` is now `22.0` (was `40.0`): about three deliveries per
+charge instead of six. Because the ML training label depends on how much of the pack an order
+consumes, `tools/ml/generate.py` and `tools/ml/train.py` were re-run — the current
+`model.joblib` is trained against the 22 Wh pack (F1 0.96; battery is now the dominant feature
+at 0.68 importance). **If you ever change `CAPACITY_WH` again, you must regenerate and retrain.**
 
-This turns C2 into a genuine admission-control algorithm with a reservation ledger, which is
-stronger for the report as well. `docs/proposal.md` §3.4 already lists a reservation ledger as a
-candidate extension.
+*(b)* The reservation ledger is in. `orders` gained `estimated_return_energy_wh` and
+`estimated_peak_c`; `Database.committed_load()` sums energy and takes the maximum peak
+temperature over orders in `pending / navigating / grabbing / delivering / releasing`; and
+`admission.project()` rolls the robot state forward past that before any gate runs. The ledger is
+*derived* from the orders table rather than stored beside it, so a terminal status releases the
+reservation automatically and the two cannot drift apart.
 
-**2. Pages should refresh every 2 seconds, and history should be cleared on every start.**
+Refusals caused by the reservation say so ("…once the 2 order(s) already in progress are done"),
+and `/preview` shows a "Battery at start" row when work is queued — otherwise the number
+contradicts the battery on `/robot` and looks like a bug.
 
-`PAGE_REFRESH_SECONDS` in `src/robofetch_bridge/robofetch_bridge/app.py` is `10`; the owner wants
-`2` for `/orders` and `/robot`. Leave `/` and `/preview` without a refresh — `/preview` is the
-result of a POST and reloading it would re-submit the form.
+**2. Pages refresh every 2 seconds, and history is cleared on every start. — DONE**
 
-For the history: each launch should start empty. Prefer a `Database.reset_session()` that DROPs and
-recreates `orders`, `delivery_history` and `robot_telemetry`, resets the single `robot_state` row,
-and restores every product's `stock`. Dropping rather than deleting also means a schema change (such
-as the new `estimated_peak_c` column) applies cleanly without a migration. Call it from the FastAPI
-startup event so it works however the system is launched.
+`PAGE_REFRESH_SECONDS` is `2`, applied to `/orders` and `/robot` only. `Database.reset_session()`
+DROPs and recreates `orders`, `delivery_history` and `robot_telemetry`, resets the `robot_state`
+row to a docked, fully charged robot, and restocks every product; it is called from the FastAPI
+startup event, so it happens however the system is launched. `Database.MIGRATIONS` additionally
+`ALTER TABLE`s the new columns onto an old database file, for tools that open it without
+resetting.
 
-**3. A delivered product must disappear from the list of options.**
+**3. A delivered product disappears from the list of options. — DONE**
 
-Once a parcel has been delivered it is at the bay, not on its shelf, so ordering it again sends the
-robot to an empty shelf and the order fails after three grab attempts. The owner wants it removed
-from the choices.
+`_on_status` calls `db.consume_stock()` when an order completes, so admission gate 1 refuses it
+with "out of stock". `list_products(available_only=True)` backs the order-form dropdown and the
+default `/api/products`; `/api/products?all=true` still returns the full catalogue for
+administrators and for the acceptance suite. The order page keeps the delivered item visible in
+the catalogue table at zero stock marked "delivered — not orderable", so its disappearance from
+the dropdown is explained rather than mysterious.
 
-Cleanest fix using machinery that already exists: when an order completes, set that product's
-`stock` to 0. Admission gate one already refuses an out-of-stock product, so the refusal path is
-free. Then filter the order-form dropdown and `/api/products` to products with `stock > 0`.
-Remember that `reset_session()` above must restore stock, or a restart would leave nothing
-orderable.
+**4. A parcel can no longer be dragged. — DONE**
 
-**4. A parcel stayed attached to the gripper and was dragged for the whole run.**
+Three layers, because this one corrupts every later delivery:
 
-The owner saw a parcel attach and never detach, so the robot carried it around for the rest of the
-session. This is the worst of the four because it corrupts every subsequent delivery.
+- `gripper_node.on_release` retries the detach up to `release_attempts` (3) times, verifying the
+  joint's own state between attempts, and only clears `held_item` once the joint agrees;
+- `task_manager.release_parcel` retries the whole service call, and **every** exit from
+  `execute_order` after a successful grab now puts the parcel down first — including the
+  "could not reach the delivery bay" path, which previously drove home still carrying it;
+- if it still will not let go, `_parcel_is_stuck` fail-stops: the robot stays put, queued orders
+  are failed with a clear reason rather than left pending for ever, and `_recover_stuck_parcel`
+  keeps retrying so the robot heals itself the moment the joint reports honestly again.
 
-`gripper_node.on_release` publishes one detach, waits `settle_time`, and then checks the joint's
-reported state. If the detach does not take, it reports failure — but the parcel is still attached,
-and `task_manager.execute_order` then fails the order and drives home **still carrying it**.
+Verified by fault injection — holding `/gripper/parcel_2/state` at `attached` reproduces the
+original bug exactly, and the whole chain (retry → fail-stop → refuse queued work → recover)
+behaves as designed. See "Verification evidence" below.
 
-Two things to do. In `on_release`, retry the detach (three attempts, verifying the joint state
-between them) instead of publishing once. And in the task manager, treat a failed release as
-serious: retry, and if the parcel is still attached, do not simply continue — the robot is in a
-state where every later order will be wrong. Note that the start-up code already detaches every
-parcel once, which is why a restart clears it.
+### ALSO ADDED — "Return the robot to its station" button
+
+A queued task, not a command. `orders` gained a `kind` column (`delivery` | `return`), and for a
+return `product_id` and `delivery_id` are NULL — there is no parcel, and the station is not a
+delivery point.
+
+- `GET /return` asks "Really send the robot back to its station?" and shows what the trip costs;
+  `POST /return` queues it. Split that way so the thing that moves a robot is a POST a browser
+  will never replay on refresh — the same reason `/preview` sits before `/confirm`.
+- The button is on `/robot` and `/orders`. `POST /api/orders/return` is the REST equivalent.
+- It goes out on the **same** `/orders/new` topic into the **same** FIFO queue, so it waits for
+  the delivery in progress. A separate "drive home now" channel would let the operator interrupt
+  a carry, and a parcel abandoned on the gripper is the exact failure fix 4 exists to prevent.
+- **Never refused.** Admission control stops the robot taking work it cannot finish, but going
+  home is the one job that leaves a struggling robot better off. It is still *costed* and still
+  *reserved*, because the drive really does spend battery.
+- Only one may be outstanding at a time (`Database.active_return()`), so a double-clicked button
+  does not fill the queue.
+- Analytics count deliveries only, with separate `returns_requested` / `returns_completed`
+  counters — otherwise "success rate" could be improved by sending the robot home a lot.
+
+Verified live: delivery queued, return requested immediately after, return sat at `pending`
+through `delivering` and `releasing`, then ran as soon as the delivery completed and ended
+`at the station, charging` with the robot state `charging`. A second request returned HTTP 409.
+Delivery success rate stayed 1/1 with returns reported as 1/1 separately.
+
+### ALSO ADDED — login, roles, emergency stop, admin CRUD, database browser
+
+**Login and two roles.** `users` and `sessions` tables; PBKDF2-SHA256 with a per-user salt
+(stdlib `hashlib`, no new dependency). The cookie holds only a random token, so there is no
+signing key to leak — and `itsdangerous` is not installed, which ruled out Starlette's
+`SessionMiddleware` anyway. Sessions are cleared by `reset_session()` on every launch; accounts
+are not.
+
+| Role | Reach |
+|---|---|
+| `controller` | order, track, robot condition, return to station, emergency stop |
+| `admin` | all of the above, plus product and delivery-point CRUD, the database browser, and user management |
+
+Seeded as `admin`/`admin` and `controller`/`controller`, overridable via
+`ROBOFETCH_ADMIN_PASSWORD` / `ROBOFETCH_CONTROLLER_PASSWORD` **before first launch**. While a
+default is still in use the API prints a warning **to the launch console** — the pages carry no
+advice of any kind, so that is the one place it is said.
+
+**Emergency stop — one button, one shot.** No confirmation (a stop that asks "are you sure?" is
+not an emergency stop) and **no latch**. `POST /estop` publishes on `/robot/estop`; the task
+manager handles it **on the subscription callback**, not the worker thread, because the worker is
+normally blocked waiting on a navigation result when the button is pressed. It cancels the
+in-flight Nav2 goal, brakes with zero `/cmd_vel`, fails the running order, and fails everything
+queued. Then it is over — the robot stands where it stopped and is immediately ready for new work.
+
+`TaskManager._abort` is a transient `Event`, raised by the button and cleared by `_serve_queue`
+the moment the worker regains control. Nothing is written to the database, so **nothing survives
+a logout** — an earlier latched version did, which was the bug that prompted this design.
+
+It does not drive home and does not put a carried parcel down: the robot is left alone, full
+stop. Going home afterwards is a separate, deliberate press of "Return to station". Because a
+stop can leave a parcel on the gripper, `_serve_queue` calls `_drop_carried()` before starting
+**any** task — otherwise the operator's next order would drag it, which is the bug fix 4 exists
+to prevent.
+
+The button sits alone at the far right of the header (`.estop-slot { margin-left: auto }`) with
+3 rem of dead space to its left. That spacing IS the safeguard against an accidental press; there
+is deliberately no confirmation step to slow down a real one.
+
+**Admin CRUD and the database browser.** `/admin/products` and `/admin/delivery-points` add,
+update and delete through the existing `upsert_*` / `delete_*` methods. `/admin/db` browses every
+table read-only, 100 rows a page, newest first. Password hashes, salts and session tokens are
+redacted. Table names cannot be parameterised in SQL, so every requested name is checked against
+`sqlite_master` first — that check is the injection defence, and `test_db.py` pins it.
+
+**phpMyAdmin does not apply.** It speaks to MySQL; this is SQLite, a single file with no server.
+The equivalent is `sqlite-web`, documented on `/admin/db` and in the README.
+
+**The UI is now plain, and carries no guidance.** `style.css` is ~130 lines of variables and
+thin rules: no tiles, pills, cards, gradients or rounded corners. Colour survives only where it
+carries meaning. Every explanatory paragraph has been removed from every page — the pages show
+data and controls only, and all of that guidance now lives in README "The web app, page by page".
+`test_the_pages_carry_no_advice` fails the build if advice, tool names or credentials reappear.
+
+Two display details worth keeping:
+
+- **Links are pinned to `color: inherit` in all five states**, so nothing is browser-blue and a
+  visited link never turns purple. Underlines carry the affordance instead of colour.
+- **The stylesheet is cache-busted by its own mtime** (`style.css?v=<mtime>`). Without it a
+  browser happily serves the previous design and the redesign looks like it never deployed —
+  which is exactly what happened once during development.
+
+There is a `prefers-color-scheme: dark` block, so the page follows the operating system; in dark
+mode `--fg` is white and the status colours are lifted (`#060` on `#111` is unreadable).
+
+**The 7 report screenshots are now stale and need retaking.**
+
+**Known limitation, deliberate:** only the HTML pages are gated. The REST API is open, because
+`scripts/acceptance.py` and the helper scripts are unauthenticated clients of it and this is a
+single-user simulator on one machine. If it ever faced a network, `/api/*` would need the same
+session check and every script would need a token. Recorded in README "Known limitations".
+
+### ALSO FIXED — grab geometry, so deliveries land ON the bay
+
+Deliveries used to end 0.6-0.8 m from the bay marker. The cause was at **grab** time, not
+release: the robot parked without facing the parcel (`navigate_to` defaults to `yaw=0.0`), the
+gripper accepted anything within 0.85 m in **any** direction, and `DetachableJoint` carries and
+releases a parcel at whatever offset it had when attached — so the drop inherited the grab error.
+
+- `TaskManager.approach(point, target, standoff)` drives to a point **facing** something. At the
+  pick point it faces the shelf; the shelf centre is sent with the order.
+- The gripper refuses a grab outside `grab_half_angle_deg` (60) or nearer than
+  `min_grab_distance` (0.15 m).
+- The delivery approach stops `carry_offset` (0.55 m) **short** of the bay, facing it, so the
+  carried parcel lands on the bay rather than past it.
+- `delivery_tolerance` 1.1 -> **0.7**, and `DELIVERY_TOLERANCE` in the acceptance suite with it.
+
+Measured: **0.24, 0.31, 0.44, 0.49 m** across all three shelves and both bays.
+
+Full detail, plus two approaches that FAILED and must not be retried, in §5.11b.
+
+### STILL OPEN — pick these up next
+
+1. **Commit.** ~30 files, nothing in git. Almost certainly the first thing to do.
+2. **The robot bulldozes parcels it has already delivered** — see immediately below. Not fixed;
+   three candidate fixes listed, all of which change the warehouse layout figure in the report.
+3. **`/clock` runs at ~500 Hz and dominates CPU** (§5.13). Not needed for correctness — the suite
+   passes 26/26 headless. It matters only for making the **GUI/RViz** run comfortable, which is
+   the owner's remaining pain point. Three levers listed, none tested; one experiment already
+   produced a failed launch and was reverted.
+4. **The report is stale**: 7 UI screenshots predate the redesign and the login page, the
+   acceptance figure should be 26/26, and delivery accuracy is now ~0.25-0.5 m not 0.6-0.8 m.
+5. **Multi-item stock is deliberately NOT implemented.** The owner decided the catalogue is the
+   system of record and the simulator is only a demo: if the database says a shelf holds four of
+   something and Gazebo has one, ordering the missing ones simply fails after three grab attempts,
+   and that is acceptable. Do not build Gazebo-to-database syncing; it was considered and rejected
+   as too heavy. Recorded under Known limitations in the README.
+
+### NEWLY FOUND — the robot bulldozes parcels it has already delivered
+
+This is **not** one of the four, and it is **not fixed**. It is very likely what was actually
+observed as "a parcel was dragged for the whole run".
+
+The station is at `(0, -2.2)` and both delivery bays are at `(-3.0, -2.2)` and `(2.6, -2.2)` —
+all three on the same line. Parcels sit below the lidar plane, so Nav2 cannot see them. After
+delivering, the robot drives home along that line and pushes the parcel it has just dropped.
+Observed directly: `parcel_5` was verified delivered 0.66 m from `delivery_1`, and after the
+robot returned to the station it was at `(+0.26, -2.05)` — shoved 2.6 m, sitting on the dock.
+
+It is a push, not a drag: the joint reported `detached`, C3 verification passed before the robot
+moved, and the parcel ended 0.30 m from the robot centre rather than at the 0.55 m carry offset.
+
+Options, cheapest first:
+
+- move the station off the line, e.g. to `(0.0, -0.6)`, so the return path does not cross either
+  bay. One row in `DEFAULT_STATION`, plus `initial_pose`/`station` in `delivery.launch.py` and
+  the acceptance `SPAWN` expectations — and the report's warehouse figure;
+- or spread the drop points, giving each bay a small offset per delivery so parcels do not pile
+  up on the through-route;
+- or route home via a waypoint north of the bay line.
+
+Decide before re-running the report figures, since it changes the warehouse layout diagram.
+
+### Verification evidence for the four fixes
+
+Every claim below was checked against the simulator, not against a log message.
+
+| Fix | Evidence |
+|---|---|
+| 1a faster drain | `SKU-3001` to `delivery_1` predicted "battery 67.5% after", against ~82% on the old pack |
+| 1b reservation | live battery 82.1%, two orders in flight holding 9.5 Wh → next order costed from **38.9%** (82.1 − 9.5/22×100 = 38.9, exact) |
+| 2 reset | relaunched against a 143 KB `robofetch.db` carrying the previous session; `/api/orders` came back `[]` and every product restocked |
+| 3 stock | after delivering `SKU-3001`, `/api/products` returned 5 items, `?all=true` still 6 with stock 0, re-ordering refused "SKU-3001 is out of stock" |
+| 4 release | fault-injected `/gripper/parcel_2/state` held at `attached`: gripper retried 3×, task manager retried 2×, order failed with the stuck reason, the **queued order was failed rather than run**, and the robot recovered by itself once the joint reported `detached` |
+
+Fault injection for fix 4, which is worth keeping — it reproduces the original bug on demand:
+
+```bash
+# terminal 1: make the gripper believe the joint never lets go
+ros2 topic pub -r 5 /gripper/parcel_2/state std_msgs/msg/String "data: attached"
+# terminal 2: order that parcel, and one behind it
+./scripts/order.sh SKU-1002 delivery_1
+# stop terminal 1, then tell the truth again and watch it recover
+ros2 topic pub -1 /gripper/parcel_2/state std_msgs/msg/String "data: detached"
+```
 
 ### How to work on this
 
@@ -115,10 +309,11 @@ The owner's standing preferences are in §9. The ones that matter most:
 
 ```bash
 cd ~/robofetch_ws && source install/setup.bash
-./robofetch_venv/bin/python -m pytest src/robofetch_core/test/ src/robofetch_bridge/test/ -q   # 65
+./robofetch_venv/bin/python -m pytest src/robofetch_core/test/ src/robofetch_bridge/test/ -q   # 155
 ./scripts/stop.sh && ./scripts/run.sh --headless        # wait for "Localized and ready"
 ./scripts/order.sh SKU-3001 delivery_1                  # ends with VERIFIED or NOT DELIVERED
-./robofetch_venv/bin/python scripts/acceptance.py       # 15/15, needs a fresh world
+./robofetch_venv/bin/python scripts/acceptance.py       # 26/26, needs a fresh world
+                                                        # allow ~25 min: it waits for recharges
 ```
 
 ---
@@ -321,14 +516,15 @@ The REST API is still there for scripts: `POST /api/preview`, `POST /api/orders`
 cd ~/robofetch_ws && source install/setup.bash
 ./robofetch_venv/bin/python -m pytest src/robofetch_core/test/ src/robofetch_bridge/test/ -v
 ```
-**65 passing:** condition model, admission policy, database, and HTTP↔SQLite↔ROS integration.
+**155 passing:** condition model, admission policy (including the reservation ledger), database
+(reservations, stock, session reset), and HTTP↔SQLite↔ROS integration.
 
 Acceptance, against the live simulator (needs a freshly launched stack):
 
 ```bash
 ./robofetch_venv/bin/python scripts/acceptance.py          # --quick skips the slow physical ones
 ```
-**15/15 passing** as of 2026-08-07.
+**26/26 passing** as of 2026-08-18.
 
 ### ⚠️ Verify with Gazebo, never with logs alone
 
@@ -572,6 +768,111 @@ Two things to know if you touch this:
 `on_release` verifies the same way: a detach that did not take hold would otherwise leave the parcel
 welded to the gripper and dragged into the next delivery.
 
+### 5.11b Deliveries landed 0.6-0.8 m from the bay — the error was made at GRAB time
+
+**Symptom.** Everything reported success, but every parcel ended up well outside the bay marker.
+
+**Cause — three, compounding.** None of them are at the release step, which is where it looks
+like the fault must be:
+
+1. `navigate_to` defaults to `yaw=0.0`, so the robot arrived at every pick point facing east,
+   whatever it had come to collect.
+2. `hold_tolerance` was 0.85 m with **no direction check**, so the gripper would weld a parcel
+   sitting beside or behind the robot just as happily as one in front.
+3. `DetachableJoint` holds the parcel at whatever offset it had when attached, and releases it
+   at that same offset. So a parcel caught 0.8 m off to one side was carried 0.8 m off to one
+   side and dropped 0.8 m from the bay. **The delivery inherited the grab's error.**
+
+**Fix.**
+
+- `TaskManager.approach(point, target, standoff)` drives to a point *facing* something. At the
+  pick point it faces the shelf, so the parcel is dead ahead.
+- The gripper refuses a grab outside `grab_half_angle_deg` (60 deg) of its heading, or closer
+  than `min_grab_distance` (0.15 m, i.e. the approach overshot and the chassis is on top of it).
+- The delivery approach stops `carry_offset` (0.55 m) **short** of the bay, facing it, so the
+  parcel — which rides that far ahead — lands on the bay rather than past it.
+- `delivery_tolerance` 1.1 -> 0.6, and `DELIVERY_TOLERANCE` in the acceptance suite with it.
+
+**Measured after:** 0.31 m (shelf_3 -> delivery_1) and 0.24 m (shelf_2 -> delivery_2).
+
+**Two things that did NOT work, so do not retry them:**
+
+- *Calling `_snap_to_gripper` after a successful attach.* It teleports the parcel to a fixed
+  point ahead of the robot, which sounds like the ideal fix and is why the helper exists. In
+  practice it put parcel_5 **inside shelf_3**, Gazebo's physics ejected it across the room, and
+  the delivery failed at 8.07 m. The helper remains deliberately unused.
+- *Facing the parcel using `self.parcel_poses`.* `/model/<parcel>/pose` is **event-driven**: a
+  parcel sitting still on a shelf never publishes, so the task manager's copy of that pose is
+  simply absent when it matters. The shelf centre is sent with the order instead, because the
+  database always knows it.
+
+### 5.12 "I have no frame" — one leftover `route_server` breaks every later launch
+
+**Symptom.** RViz shows no frames; `planner_server` logs `Timed out waiting for transform from
+base_footprint to map`; AMCL repeats `cannot publish a pose`; the task manager sits at
+`AMCL never confirmed the initial pose`; bringup ends with **"Failed to bring up all requested
+nodes. Aborting bringup."** Intermittent, and it gets worse the more times you relaunch.
+
+**Cause.** `scripts/stop.sh` kills Nav2 nodes by name, and its list was missing exactly one:
+`route_server`, which is new in Nav2 Jazzy and postdates the line. So any unclean stop left one
+alive. That orphan keeps its **node name** on the DDS network; the next launch starts its own
+`route_server`; two nodes now answer to the same name; the new lifecycle manager's `change_state`
+calls go astray and time out. No navigation stack means no `map` frame, so nothing localizes.
+
+One survivor breaks every run after it, which is why it looks like a load problem — the orphans
+accumulate across a session.
+
+**How it was found.** `ps -eo pid,etimes,comm` showed a `route_server` aged 2667 s sitting beside
+a run whose processes were all 145 s old. Elapsed time is the tell; the process list alone looks
+normal.
+
+**Fix.** `route_server` added to `PATTERN`, plus a self-audit:
+
+```bash
+./scripts/stop.sh --check      # names any live ROS process stop.sh would NOT kill
+```
+
+Run it while the system is up. Anything it lists is a future leftover. **If you add a Nav2
+server, add it to `PATTERN`** — `--check` exists to catch the omission, but only if you run it.
+
+### 5.13 `/clock` runs at ~500 Hz and every sim-time node pays for it
+
+Not a bug, but the single largest CPU cost in the system, and worth knowing before blaming
+anything else.
+
+`warehouse.sdf` sets `max_step_size 0.001`, so Gazebo steps at 1 kHz and `/clock` is bridged at
+~500-600 Hz (measured). **Every node with `use_sim_time: true` subscribes to `/clock`** — about
+twenty of them — purely to know what time it is. In a Python node that costs far more per message
+than the node's real work: measured while completely idle,
+
+| node | CPU |
+|---|---|
+| `component_container` / Nav2 | ~206% |
+| Gazebo (`ruby`) | ~174% |
+| `gripper_node` | ~114% |
+| `task_manager` | ~113% |
+| `robot_state_node` | ~60% |
+
+Measure it with `/proc/<pid>/stat` deltas, **not** `top`: `top -b`'s first iteration reports
+lifetime averages, so mixing its output blocks gives numbers that are wrong by an order of
+magnitude. That mistake was made once already during this investigation.
+
+Two levers exist, **neither tested, both reverted after a failed launch**:
+
+- `use_sim_time: False` on `gripper_node` and `robot_state_node`. Both use `time.time()` and
+  `time.sleep()` and read no ROS time at all, so they gain nothing from `/clock`. `task_manager`
+  must keep it: it stamps the initial pose for AMCL, and a wall-clock stamp against a sim-time TF
+  buffer is rejected as extrapolation, so the robot never localizes.
+- `use_composition: True` in `navigation.launch.py` — Nav2's own default, which this project
+  overrode. Collapses fifteen processes into one container. It **did** come up cleanly when
+  tried, but only once, which is not enough evidence to keep.
+- Raising `max_step_size` to `0.004` would cut `/clock` to ~125 Hz and help every node at once,
+  but the parcel physics in §5.5 were tuned at 1 ms and a coarser step may change grab and drag
+  behaviour. Needs a real delivery run to confirm.
+
+None of this is required for the system to work: the acceptance suite passes 26/26 headless. It
+matters only for making the **GUI/RViz** run comfortable.
+
 ### 5.11 v2 traps worth knowing
 
 **`stop.sh` missed the SECOND web service.** v2 added `robofetch_ai` on port 8001, and the
@@ -613,11 +914,21 @@ raises at request time, not at import, so the app starts happily and then fails 
 `orders` table in place with the wrong columns. Delete `robofetch.db` when moving to v2 — it is
 runtime state and is recreated with the seeded catalogue on first run.
 
-**Constants were retuned so the demo has something to refuse.** `CAPACITY_WH` is 40 (about 4–6
+**Constants were retuned so the demo has something to refuse.** `CAPACITY_WH` is 22 (about three
 deliveries per charge) and `K_HEAT` is 1.2, which puts the lightest product's steady-state
 temperature around 65 C and the heaviest around 74 C — straddling the 70 C limit. That is what
 makes payload weight actually decide an outcome. A bigger battery or gentler heating is more
 realistic but leaves the accept/refuse logic with nothing to bite on.
+
+`CAPACITY_WH` is the one constant that reaches outside its own file: the ML training label
+depends on what fraction of the pack an order consumes, so changing it silently invalidates
+`model.joblib`. Regenerate and retrain whenever it moves:
+
+```bash
+./robofetch_venv/bin/python tools/ml/generate.py --runs 4000 --out tools/ml/runs.csv
+./robofetch_venv/bin/python tools/ml/train.py --data tools/ml/runs.csv \
+    --out src/robofetch_ai/robofetch_ai/models/model.joblib
+```
 
 ### 5.9 "I submitted an order and nothing happened"
 

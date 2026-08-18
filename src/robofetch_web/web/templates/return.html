@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Return to station &middot; RoboFetch{% endblock %}
+
+{% block content %}
+<h1>Return to station</h1>
+
+{% if pending %}
+  <div class="verdict refused">
+    <div class="verdict-head">Already queued</div>
+    <p>Task {{ pending.id }},
+       <span class="status s-{{ pending.status }}">{{ pending.status }}</span>.</p>
+  </div>
+  <a href="/orders">Orders</a>
+
+{% else %}
+  <div class="verdict accepted">
+    <div class="verdict-head">Send the robot back to its station?</div>
+  </div>
+
+  <table>
+    <tbody>
+      <tr><th>Distance</th><td class="num">{{ estimate.distance_m }} m</td></tr>
+      <tr><th>Energy</th><td class="num">{{ estimate.energy_wh }} Wh</td></tr>
+      <tr><th>Time</th><td class="num">~{{ estimate.seconds }} s</td></tr>
+      {% if estimate.reserved_orders %}
+        <tr><th>Battery at start</th>
+            <td class="num">{{ estimate.battery_at_start_percent }}%</td></tr>
+      {% endif %}
+      <tr><th>Battery on arrival</th>
+          <td class="num">{{ estimate.battery_after_percent }}%</td></tr>
+    </tbody>
+  </table>
+
+  <form method="post" action="/return" class="inline">
+    <button type="submit">Yes, send it to the station</button>
+  </form>
+  <a href="/robot">Cancel</a>
+{% endif %}
+{% endblock %}

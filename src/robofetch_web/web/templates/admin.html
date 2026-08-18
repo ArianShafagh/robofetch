@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Admin &middot; RoboFetch{% endblock %}
+
+{% block content %}
+<h1>Administration</h1>
+<h2>Manage</h2>
+<ul>
+  <li><a href="/admin/products">Products</a> &mdash; add, update, delete catalogue items</li>
+  <li><a href="/admin/delivery-points">Delivery points</a> &mdash; the warehouse destinations</li>
+  <li><a href="/admin/db">Database browser</a> &mdash; read every table</li>
+</ul>
+
+<h2>Database</h2>
+<table>
+  <thead><tr><th>Table</th><th class="num">Rows</th></tr></thead>
+  <tbody>
+    {% for t in tables %}
+      <tr>
+        <td><a href="/admin/db?table={{ t.name }}" class="mono">{{ t.name }}</a></td>
+        <td class="num">{{ t.rows }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Users</h2>
+<table>
+  <thead><tr><th>Username</th><th>Role</th><th></th></tr></thead>
+  <tbody>
+    {% for u in users %}
+      <tr>
+        <td class="mono">{{ u.username }}</td>
+        <td>{{ u.role }}</td>
+        <td>
+          {% if u.username != user.username %}
+            <form method="post" action="/admin/users/delete" class="inline">
+              <input type="hidden" name="username" value="{{ u.username }}">
+              <button type="submit">Delete</button>
+            </form>
+          {% else %}
+            <span class="muted small">signed in as this account</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Add a user, or set a password</h2>
+<form method="post" action="/admin/users/password">
+  <label for="u_username">Username</label>
+  <input id="u_username" name="username" required>
+  <label for="u_password">Password</label>
+  <input id="u_password" name="password" type="password" minlength="4" required>
+  <label for="u_role">Role</label>
+  <select id="u_role" name="role">
+    <option value="admin">admin</option>
+    <option value="controller">controller</option>
+  </select>
+  <button type="submit">Save user</button>
+</form>
+{% endblock %}

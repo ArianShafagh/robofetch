@@ -9,31 +9,37 @@
      the order form or the preview: /preview is the result of a POST, and reloading it would
      silently re-submit the form. #}
   {% if refresh_seconds %}<meta http-equiv="refresh" content="{{ refresh_seconds }}">{% endif %}
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v={{ css_version }}">
 </head>
 <body>
 
 <header>
-  <div class="brand">
-    <strong>RoboFetch</strong>
-    <span class="muted">warehouse delivery</span>
-  </div>
-  <nav>
-    <a href="/">New order</a>
-    <a href="/orders">Orders</a>
-    <a href="/robot">Robot</a>
-  </nav>
-  {# A compact condition readout on every page: the operator needs to know the robot is
-     healthy before wondering why an order was refused. Position is deliberately absent. #}
-  <div class="status">
-    <span class="pill {{ 'ok' if (robot.battery_percent or 0) > 30 else 'bad' }}">
-      {{ '%.0f'|format(robot.battery_percent or 0) }}% battery
-    </span>
-    <span class="pill {{ 'warn' if (robot.temperature_c or 0) > 55 else '' }}">
-      {{ '%.0f'|format(robot.temperature_c or 0) }} &deg;C
-    </span>
-    <span class="pill">{{ robot.state or 'unknown' }}</span>
-  </div>
+  <strong>RoboFetch</strong>
+  {% if user %}
+    <nav>
+      <a href="/">New order</a>
+      <a href="/orders">Orders</a>
+      <a href="/robot">Robot</a>
+      {# Only administrators are shown the admin link. Offering it to a robot controller would
+         just be a 403 waiting to happen. #}
+      {% if user.role == 'admin' %}<a href="/admin">Admin</a>{% endif %}
+    </nav>
+    <div class="status">
+      {{ '%.0f'|format(robot.battery_percent or 0) }}% battery &middot;
+      {{ '%.0f'|format(robot.temperature_c or 0) }} &deg;C &middot;
+      {{ robot.state or 'unknown' }}
+      &middot; {{ user.username }} ({{ user.role }})
+      <form method="post" action="/logout" class="inline">
+        <button type="submit">Log out</button>
+      </form>
+    </div>
+    {# Alone on the right, with empty space either side of it. It is reachable from every page
+       because you cannot know which page the operator will be looking at when they need it -
+       and it is kept well away from every other control so it cannot be hit by accident. #}
+    <form method="post" action="/estop" class="estop-slot">
+      <button type="submit" class="estop">EMERGENCY STOP</button>
+    </form>
+  {% endif %}
 </header>
 
 <main>

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Delivery points &middot; RoboFetch{% endblock %}
+
+{% block content %}
+<h1>Delivery points</h1>
+<table>
+  <thead><tr><th>ID</th><th>Name</th><th class="num">x</th><th class="num">y</th><th></th></tr></thead>
+  <tbody>
+    {% for d in points %}
+      <tr>
+        <td class="mono">{{ d.delivery_id }}</td>
+        <td>{{ d.name }}</td>
+        <td class="num">{{ d.x }}</td>
+        <td class="num">{{ d.y }}</td>
+        <td>
+          <a href="/admin/delivery-points?edit={{ d.delivery_id }}">Edit</a>
+          <form method="post" action="/admin/delivery-points/delete" class="inline">
+            <input type="hidden" name="delivery_id" value="{{ d.delivery_id }}">
+            <button type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="empty">No delivery points &mdash; nothing can be ordered.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>{% if editing %}Edit {{ editing.delivery_id }}{% else %}Add a delivery point{% endif %}</h2>
+<form method="post" action="/admin/delivery-points">
+  <label for="delivery_id">ID</label>
+  <input id="delivery_id" name="delivery_id" required
+         value="{{ editing.delivery_id if editing else '' }}">
+  <label for="name">Name</label>
+  <input id="name" name="name" required value="{{ editing.name if editing else '' }}">
+  <label for="x">x</label>
+  <input id="x" name="x" type="number" step="0.1" required
+         value="{{ editing.x if editing else '0.0' }}">
+  <label for="y">y</label>
+  <input id="y" name="y" type="number" step="0.1" required
+         value="{{ editing.y if editing else '0.0' }}">
+  <button type="submit">{% if editing %}Save changes{% else %}Add point{% endif %}</button>
+</form>
+
+{% if editing %}<p><a href="/admin/delivery-points">Cancel editing</a></p>{% endif %}
+{% endblock %}

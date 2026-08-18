@@ -108,6 +108,10 @@ class RobotStateNode(Node):
         Health states outrank activity: an overheated robot is in COOLDOWN whatever the task
         manager believes it is doing, and that is what admission control reads.
         """
+        # A halted robot is halted, whatever else is true of it. Reporting "cooldown" for a robot
+        # someone has just emergency-stopped would hide the one fact the operator needs.
+        if self.activity == "stopped":
+            return "stopped"
         if self.condition.temperature_c >= T_MAX:
             return "cooldown"
         if self.condition.condition_percent < CONDITION_MIN:

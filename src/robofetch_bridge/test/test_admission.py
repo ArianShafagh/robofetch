@@ -137,6 +137,81 @@ def test_system_still_decides_when_the_ai_is_unreachable():
     assert "reserve" in reason
 
 
+# ------------------------------------------------------- the reservation ledger
+# The gates above judge one order against a robot standing still. These check the harder case:
+# an order arriving while the robot is already committed to work it has not finished.
+def test_projection_is_a_no_op_when_nothing_is_committed():
+    live = state(battery=80.0)
+    assert admission.project(live, None) == live
+    assert admission.project(live, {"orders": 0, "energy_wh": 0.0,
+                                    "peak_temperature_c": None}) == live
+
+
+def test_a_reservation_refuses_an_order_the_live_battery_would_have_allowed():
+    """Two orders judged against the same battery can together exceed the pack."""
+    alone = admission.decide(product(), DELIVERY, STATION, state(battery=60.0))
+    assert alone[0] == admission.ACCEPTED
+
+    # Same robot, same order - but work already accepted has spoken for most of the charge.
+    queued = admission.decide(product(), DELIVERY, STATION, state(battery=60.0),
+                              committed={"orders": 2, "energy_wh": 9.5,
+                                         "peak_temperature_c": None})
+    assert queued[0] == admission.REFUSED
+    assert "reserve" in queued[1]
+    # The refusal has to explain itself, or it contradicts the battery on the robot page.
+    assert "already in progress" in queued[1]
+
+
+def test_a_reservation_carries_the_hottest_committed_job_forward():
+    """Energy sums across queued orders; heat takes the maximum instead."""
+    alone = admission.decide(product(weight=4.5), DELIVERY, STATION, state())
+    assert alone[0] == admission.ACCEPTED
+
+    after_hot_job = admission.decide(
+        product(weight=4.5), DELIVERY, STATION, state(),
+        committed={"orders": 1, "energy_wh": 0.0, "peak_temperature_c": 68.0})
+    assert after_hot_job[0] == admission.REFUSED
+    assert "cool down" in after_hot_job[1]
+
+
+def test_the_classifier_is_asked_about_the_projected_robot():
+    """The model must see the same world the gates judged, or the two disagree silently."""
+    seen = {}
+
+    def spy(features):
+        seen.update(features)
+        return True, 0.9, "model"
+
+    admission.decide(product(), DELIVERY, STATION, state(battery=90.0), predictor=spy,
+                     committed={"orders": 1, "energy_wh": 4.4, "peak_temperature_c": None})
+    assert seen["battery_percent"] < 90.0
+
+
+def test_the_cost_reports_what_was_reserved():
+    _, _, _, cost = admission.decide(
+        product(), DELIVERY, STATION, state(battery=90.0),
+        committed={"orders": 2, "energy_wh": 4.4, "peak_temperature_c": None})
+    assert cost["reserved_orders"] == 2
+    assert cost["reserved_energy_wh"] == pytest.approx(4.4)
+    assert cost["battery_at_start_percent"] < 90.0
+
+
+def test_a_flat_battery_is_not_mistaken_for_a_missing_reading():
+    """0.0 is a reading, not an absence: `state.get(x) or default` calls a flat robot healthy."""
+    decision, reason, _, cost = admission.decide(product(), DELIVERY, STATION,
+                                                 state(battery=0.0))
+    assert decision == admission.REFUSED
+    assert "reserve" in reason
+    assert cost["battery_at_start_percent"] == 0.0
+
+
+def test_a_broken_robot_is_not_mistaken_for_a_missing_reading():
+    decision, reason, _, _ = admission.decide(product(), DELIVERY, STATION,
+                                              state(condition=0.0))
+    assert decision == admission.REFUSED
+    assert "maintenance" in reason
+
+
 def test_features_are_the_five_the_model_was_trained_on():
     cost = admission.estimate(product(), DELIVERY, STATION, state())
     features = admission.features(product(), cost, state())

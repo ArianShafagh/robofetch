@@ -1,150 +1,132 @@
-/* RoboFetch - plain CSS for server-rendered pages. No JavaScript anywhere in this project,
-   so everything here is static styling; there are no interactive states to script. */
+/* RoboFetch - deliberately plain. No JavaScript anywhere in this project, and no decoration:
+   default fonts, thin rules, and colour used only where it carries meaning.
+
+   Two themes, chosen by the operating system. Every colour is a variable so the dark block below
+   is a short list of swaps rather than a second stylesheet. */
 
 :root {
-  --bg: #f5f7fa;
-  --panel: #ffffff;
-  --line: #d9e0e8;
-  --text: #1b2430;
-  --muted: #66748a;
-  --accent: #2563c9;
-  --ok: #1a7f42;
-  --warn: #a86a00;
-  --bad: #c0392b;
-  --radius: 8px;
+  --bg:    #fff;
+  --fg:    #111;
+  --line:  #ccc;
+  --head:  #f0f0f0;
+  --muted: #555;
+  --ok:    #060;
+  --bad:   #a00;
+  --warn:  #850;
+  --notice-bg: #fffbe6;
+  --estop-bg:  #ffecec;
+  --estop-fg:  #a00;
+  --pre-bg: #f5f5f5;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #10141a;
-    --panel: #181e26;
-    --line: #2b3542;
-    --text: #e6ecf3;
-    --muted: #8fa0b4;
-    --accent: #5b9dff;
-    --ok: #3fb567;
-    --warn: #d79a26;
-    --bad: #e5675a;
+    --bg:    #111;
+    --fg:    #fff;
+    --line:  #444;
+    --head:  #1e1e1e;
+    --muted: #aaa;
+    /* Lifted well above the light-theme values: #060 on #111 is unreadable. */
+    --ok:    #4caf50;
+    --bad:   #ff6b6b;
+    --warn:  #e0b040;
+    --notice-bg: #2a2410;
+    --estop-bg:  #3a1414;
+    --estop-fg:  #ff6b6b;
+    --pre-bg: #1a1a1a;
   }
 }
 
-* { box-sizing: border-box; }
-
 body {
-  margin: 0;
+  margin: 0 auto;
+  padding: 1rem;
+  max-width: 60rem;
+  font-family: system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--fg);
   background: var(--bg);
-  color: var(--text);
-  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
-/* ------------------------------------------------------------------ chrome */
+/* Links take the surrounding text colour instead of the browser's blue-then-purple. All five
+   states are pinned to the same value, so a visited link looks exactly like an unvisited one.
+   Underlined, so they still read as links without depending on colour at all. */
+a, a:link, a:visited, a:hover, a:active, a:focus {
+  color: inherit;
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------------------ chrome */
 header {
-  display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
-  padding: 12px 22px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; flex-wrap: wrap; gap: 1rem;
+  border-bottom: 1px solid var(--line); padding-bottom: .5rem; margin-bottom: 1rem;
 }
-.brand strong { font-size: 17px; }
-.brand .muted { margin-left: 8px; font-size: 13px; }
-header nav { display: flex; gap: 16px; }
-header nav a { color: var(--accent); text-decoration: none; font-weight: 600; font-size: 14px; }
-header nav a:hover { text-decoration: underline; }
-header .status { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+header nav a { margin-right: 1rem; }
+header .status { font-size: 13px; color: var(--muted); }
 
-main { max-width: 1000px; margin: 0 auto; padding: 22px; }
-footer { max-width: 1000px; margin: 0 auto; padding: 8px 22px 28px; font-size: 12.5px; }
+h1 { font-size: 1.3rem; margin: 1rem 0 .5rem; }
+h2 { font-size: 1.05rem; margin: 1.5rem 0 .5rem; }
 
-h1 { font-size: 22px; margin: 0 0 6px; }
-h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .7px;
-     color: var(--muted); margin: 26px 0 10px; }
-.card h2 { margin-top: 0; }
 .muted { color: var(--muted); }
-.small { font-size: 12.5px; }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
-.num { text-align: right; font-variant-numeric: tabular-nums; }
+.small { font-size: 13px; }
+.mono { font-family: monospace; }
+.num { text-align: right; }
 
-/* ------------------------------------------------------------------- pills */
-.pill {
-  font-size: 12px; font-weight: 600;
-  padding: 3px 10px; border-radius: 999px;
-  border: 1px solid var(--line); color: var(--muted); background: var(--bg);
-  white-space: nowrap;
-}
-.pill.ok   { color: var(--ok);   border-color: var(--ok); }
-.pill.warn { color: var(--warn); border-color: var(--warn); }
-.pill.bad  { color: var(--bad);  border-color: var(--bad); }
+/* ------------------------------------------------------------------------- tables */
+.scroll { overflow-x: auto; }            /* wide tables scroll, the page never does */
+table { border-collapse: collapse; width: 100%; font-size: 14px; margin-bottom: 1rem; }
+th, td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+th { background: var(--head); font-weight: 600; white-space: nowrap; }
+td.empty { text-align: center; color: var(--muted); }
 
-/* ------------------------------------------------------------------ layout */
-.card {
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px;
-}
-.columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
-
-/* ------------------------------------------------------------------- forms */
-form.card { display: flex; flex-direction: column; gap: 6px; max-width: 520px; }
-label { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
-select, button, .button-secondary {
-  font: inherit; border-radius: 6px; border: 1px solid var(--line);
-  padding: 9px 12px; background: var(--bg); color: var(--text);
-}
-button {
-  margin-top: 16px; background: var(--accent); border-color: var(--accent);
-  color: #fff; font-weight: 650; cursor: pointer;
-}
-button:hover { filter: brightness(1.08); }
-.button-secondary { text-decoration: none; color: var(--muted); display: inline-block; }
-form.inline { display: flex; gap: 10px; align-items: center; }
-form.inline button { margin-top: 0; }
-
-/* ----------------------------------------------------------------- verdict */
-.verdict {
-  border-radius: var(--radius); padding: 16px 18px; margin: 16px 0;
-  border: 1px solid var(--line); background: var(--panel); border-left-width: 5px;
-}
-.verdict.accepted { border-left-color: var(--ok); }
-.verdict.refused  { border-left-color: var(--bad); }
-.verdict-head { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
-.verdict.accepted .verdict-head { color: var(--ok); }
-.verdict.refused  .verdict-head { color: var(--bad); }
-.verdict p { margin: 4px 0; }
-
-/* ------------------------------------------------------------------- tiles */
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-         gap: 10px; margin: 14px 0; }
-.tile {
-  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 12px 14px; display: flex; flex-direction: column; gap: 2px;
-}
-.tile .value { font-size: 21px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.tile .value.ok { color: var(--ok); }
-.tile .value.warn { color: var(--warn); }
-.tile .value.bad { color: var(--bad); }
-.tile .label { font-size: 11.5px; color: var(--muted);
-               text-transform: uppercase; letter-spacing: .5px; }
-
-/* --------------------------------------------------------- definition lists */
-dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; }
-dt { color: var(--muted); font-size: 13px; }
+/* Label/value pairs. Two columns is the whole design. */
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 1rem; margin: 0 0 1rem; }
+dt { color: var(--muted); }
 dd { margin: 0; }
 
-/* ------------------------------------------------------------------ tables */
-.scroll { overflow-x: auto; }          /* wide tables scroll, the page never does */
-table { width: 100%; border-collapse: collapse; font-size: 13.5px;
-        background: var(--panel); border: 1px solid var(--line);
-        border-radius: var(--radius); overflow: hidden; }
-th, td { text-align: left; padding: 9px 11px; border-bottom: 1px solid var(--line); }
-th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .5px;
-     color: var(--muted); font-weight: 650; white-space: nowrap; }
-tbody tr:last-child td { border-bottom: none; }
-td.empty { text-align: center; color: var(--muted); padding: 22px; }
+pre { background: var(--pre-bg); border: 1px solid var(--line); padding: .5rem;
+      overflow-x: auto; }
 
-.status {
-  display: inline-block; font-size: 11.5px; font-weight: 650;
-  padding: 2px 9px; border-radius: 999px; text-transform: uppercase; letter-spacing: .4px;
-  border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+/* -------------------------------------------------------------------------- forms */
+label { display: block; margin-top: .5rem; font-size: 13px; }
+input, select, button {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
 }
-.s-navigating, .s-delivering, .s-grabbing, .s-releasing { color: var(--accent); border-color: var(--accent); }
-.s-completed { color: var(--ok);  border-color: var(--ok); }
-.s-failed    { color: var(--bad); border-color: var(--bad); }
-.s-refused   { color: var(--warn); border-color: var(--warn); }
+input, select { padding: 3px 5px; }
+button { padding: 4px 10px; margin-top: .5rem; cursor: pointer; }
+form.inline { display: inline; }
+form.inline button { margin-top: 0; }
+
+/* ------------------------------------------------------------- meaning-only colour */
+.ok { color: var(--ok); }
+.bad { color: var(--bad); }
+.warn { color: var(--warn); }
+
+/* Order status. Text, not badges - the word already says it; colour only sorts good from bad. */
+.status { font-weight: 600; }
+.s-completed { color: var(--ok); }
+.s-failed    { color: var(--bad); }
+.s-refused, .s-cancelled { color: var(--warn); }
+
+/* A verdict and a warning are the two things the reader must not skim past. */
+.verdict, .notice { border: 1px solid var(--line); border-left-width: 5px;
+                    padding: .5rem .75rem; margin: 1rem 0; }
+.verdict.accepted { border-left-color: var(--ok); }
+.verdict.refused  { border-left-color: var(--bad); }
+.notice { border-left-color: var(--warn); background: var(--notice-bg); }
+.verdict-head { font-weight: 700; }
+.verdict p, .notice p { margin: .25rem 0; }
+
+/* The emergency stop. The one control that must be impossible to miss or to hit by accident, so
+   it is the single place a colour is hard-coded rather than themed - and the only one given a
+   wide berth. `margin-left: auto` pushes it to the far right of the header; the padding either
+   side is dead space that keeps a stray click from landing on it. */
+.estop-slot { margin-left: auto; padding: 0 .5rem 0 3rem; }
+button.estop {
+  background: #a00; color: #fff; font-weight: 700; letter-spacing: .5px;
+  padding: 10px 18px; border: 2px solid #700; margin-top: 0; cursor: pointer;
+}
+button.estop:hover { background: #c00; }

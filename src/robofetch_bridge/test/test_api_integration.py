@@ -26,6 +26,8 @@ class FakeNode:
         self.robot_xy = None
         self.telemetry = {}
         self.submitted = []
+        self.returned = []
+        self.estops = []
         self.subscription_count = 1      # tests flip this to simulate "no robot running"
 
     @property
@@ -39,6 +41,17 @@ class FakeNode:
         self.submitted.append({"id": order_id, "product_id": product["product_id"],
                                "model": product["model_name"],
                                "pickup": tuple(pickup), "dropoff": tuple(dropoff)})
+
+    def submit_return(self, order_id, station):
+        self.returned.append({"id": order_id, "station": (station["x"], station["y"])})
+
+    @property
+    def estop_pub(self):
+        return self
+
+    def publish_estop(self, action):
+        self.estops.append(action)
+        return self.subscription_count
 
 
 @pytest.fixture
@@ -217,6 +230,175 @@ def test_low_battery_telemetry_starts_getting_orders_refused(api):
 
     refused = order(client, "SKU-3001").json()
     assert refused["status"] == "refused"
+
+
+# ------------------------------------------------ stock, reservation, restart
+def test_a_delivered_product_stops_being_orderable(api):
+    """Its parcel is at the bay now. Ordering it again would send the robot to a bare shelf."""
+    client, _, hooks = api
+    created = order(client, "SKU-1001").json()
+    hooks["status"]({"id": created["id"], "status": "completed", "attempts": 0,
+                     "detail": "delivered"})
+
+    available = {p["product_id"] for p in client.get("/api/products").json()}
+    assert "SKU-1001" not in available
+    assert len(available) == 5
+    # The full catalogue is still reachable for an administrator.
+    assert len(client.get("/api/products?all=true").json()) == 6
+
+    again = order(client, "SKU-1001").json()
+    assert again["status"] == "refused"
+    assert "out of stock" in again["decision_reason"]
+
+
+def test_a_failed_delivery_leaves_the_product_orderable(api):
+    """The parcel never left its shelf, so nothing about the catalogue changed."""
+    client, _, hooks = api
+    created = order(client, "SKU-1001").json()
+    hooks["status"]({"id": created["id"], "status": "failed", "attempts": 3,
+                     "detail": "could not grab it"})
+    assert "SKU-1001" in {p["product_id"] for p in client.get("/api/products").json()}
+
+
+def test_orders_in_flight_are_held_against_the_next_one(api):
+    """C2's reservation ledger, end to end: the queue spends the battery before the next job."""
+    client, app_module, hooks = api
+    app_module.db.update_robot_state(battery_percent=62.0, temperature_c=22.0,
+                                     condition_percent=100.0)
+
+    first = order(client, "SKU-3001", "delivery_1").json()
+    assert first["decision"] == "accepted"
+
+    # Nothing has moved yet - the robot still reports 62% - but that charge is spoken for.
+    assert app_module.db.get_robot_state()["battery_percent"] == pytest.approx(62.0)
+    second = order(client, "SKU-1001", "delivery_1").json()
+    assert second["status"] == "refused"
+    assert "already in progress" in second["decision_reason"]
+
+    # Finishing the first order hands its reservation back, and the next order fits again.
+    hooks["status"]({"id": first["id"], "status": "completed", "attempts": 0, "detail": "done"})
+    assert app_module.db.committed_load()["orders"] == 0
+    assert order(client, "SKU-1001", "delivery_1").json()["decision"] == "accepted"
+
+
+def test_a_restart_clears_the_history_and_restocks_the_shelves(api):
+    """Every launch restores the same Gazebo world, so the database has to match it."""
+    client, app_module, hooks = api
+    created = order(client, "SKU-1001").json()
+    hooks["status"]({"id": created["id"], "status": "completed", "attempts": 0,
+                     "detail": "delivered"})
+    assert client.get("/api/orders").json() != []
+
+    app_module.db.reset_session()               # what the startup event does
+
+    assert client.get("/api/orders").json() == []
+    assert client.get("/api/analytics").json()["total_orders"] == 0
+    assert len(client.get("/api/products").json()) == 6
+    assert order(client, "SKU-1001").json()["decision"] == "accepted"
+
+
+# ---------------------------------------------------------- return to station
+def test_return_is_queued_and_sent_to_the_robot(api):
+    client, app_module, _ = api
+    body = client.post("/api/orders/return").json()
+
+    assert body["kind"] == "return"
+    assert body["status"] == "pending"
+    assert body["decision"] == "accepted"
+    assert app_module.ros.node.returned == [{"id": body["id"], "station": (0.0, -2.2)}]
+
+
+def test_a_return_is_never_refused_however_bad_the_robot_is(api):
+    """Admission control must not stand between a struggling robot and its charger."""
+    client, app_module, _ = api
+    app_module.db.update_robot_state(battery_percent=2.0, temperature_c=69.0,
+                                     condition_percent=5.0)
+    body = client.post("/api/orders/return").json()
+    assert body["status"] == "pending"
+    assert body["decision"] == "accepted"
+
+
+def test_a_second_return_conflicts_while_the_first_is_outstanding(api):
+    client, _, hooks = api
+    first = client.post("/api/orders/return").json()
+    assert client.post("/api/orders/return").status_code == 409
+
+    # Once it has arrived, asking again is legitimate.
+    hooks["status"]({"id": first["id"], "status": "completed", "attempts": 0,
+                     "detail": "at the station, charging"})
+    assert client.post("/api/orders/return").status_code == 201
+
+
+def test_a_return_queues_behind_a_delivery(api):
+    client, app_module, _ = api
+    delivery = order(client, "SKU-1001").json()
+    returning = client.post("/api/orders/return").json()
+    assert app_module.db.next_pending_order()["id"] == delivery["id"]
+    assert returning["id"] > delivery["id"]
+
+
+def test_a_completed_return_touches_neither_stock_nor_history(api):
+    client, app_module, hooks = api
+    returning = client.post("/api/orders/return").json()
+    hooks["status"]({"id": returning["id"], "status": "completed", "attempts": 0,
+                     "detail": "at the station, charging"})
+
+    assert app_module.db.list_history() == []
+    assert len(client.get("/api/products").json()) == 6      # nothing was delivered
+    assert client.get("/api/analytics").json()["returns_completed"] == 1
+
+
+def test_a_return_reserves_energy_against_the_next_order(api):
+    """It really does spend battery driving home, so the next order must be judged after it."""
+    client, app_module, _ = api
+    app_module.db.update_robot_state(battery_percent=60.0)
+    app_module.ros.node.robot_xy = (-3.0, -2.2)      # parked at the far bay, 3 m from home
+    client.post("/api/orders/return")
+
+    preview = client.post("/api/preview",
+                          json={"product_id": "SKU-1001", "delivery_id": "delivery_1"}).json()
+    assert preview["estimate"]["reserved_orders"] == 1
+    assert preview["estimate"]["battery_at_start_percent"] < 60.0
+
+
+def test_a_return_from_the_station_costs_nothing(api):
+    """The robot is already home, so the trip is zero metres - and must not reserve phantom Wh."""
+    client, app_module, _ = api
+    app_module.ros.node.robot_xy = None              # unknown position falls back to the station
+    client.post("/api/orders/return")
+    assert app_module.db.committed_load()["energy_wh"] == pytest.approx(0.0)
+
+
+# -------------------------------------------------------------- emergency stop
+def test_estop_is_one_shot_and_leaves_nothing_engaged(api):
+    """It is an action with an end, not a mode. Nothing to clear, nothing to outlive it."""
+    client, app_module, _ = api
+    body = client.post("/api/estop").json()
+    assert body == {"stopped": True, "robot_listening": True}
+    assert app_module.ros.node.estops == ["stop"]
+    # No state was written anywhere - so nothing survives the request, the session or a logout.
+    assert "estop_engaged" not in app_module.db.get_robot_state()
+
+
+def test_orders_still_work_after_a_stop(api):
+    """The robot is left alone and idle, not locked out. The next order is an ordinary order."""
+    client, _, _ = api
+    client.post("/api/estop")
+    assert order(client, "SKU-1001").json()["decision"] == "accepted"
+
+
+def test_pressing_it_twice_is_harmless(api):
+    client, app_module, _ = api
+    client.post("/api/estop")
+    client.post("/api/estop")
+    assert app_module.ros.node.estops == ["stop", "stop"]
+
+
+def test_the_stop_says_when_no_robot_was_listening(api):
+    """Publishing to a topic with no subscribers succeeds silently - a stop button must not."""
+    client, app_module, _ = api
+    app_module.ros.node.subscription_count = 0
+    assert client.post("/api/estop").json()["robot_listening"] is False
 
 
 # ------------------------------------------------------------------- analytics

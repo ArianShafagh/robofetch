@@ -17,10 +17,15 @@ That mutual coupling is what makes this a model rather than three independent co
 from dataclasses import dataclass, asdict
 
 # ------------------------------------------------------------------ battery / energy
-# Sized so a charge is worth about 4-6 deliveries. A larger pack would be more realistic for
+# Sized so a charge is worth about THREE deliveries. A larger pack would be more realistic for
 # a real warehouse robot, but then battery would never bind inside a demo session and the
-# accept/refuse decision would have nothing to refuse on.
-CAPACITY_WH = 40.0           # nominal usable pack energy
+# accept/refuse decision would have nothing to refuse on: the whole point of C2 is visible only
+# if the robot actually runs low while someone is watching.
+#
+# This constant is load-bearing well beyond this file. The ML training label depends on how much
+# of the pack an order consumes, so CHANGING IT INVALIDATES model.joblib - regenerate and
+# retrain (tools/ml/generate.py then tools/ml/train.py) whenever it moves.
+CAPACITY_WH = 22.0           # nominal usable pack energy
 E_BASE = 0.35                # Wh per metre, unloaded
 E_LOAD = 0.08                # Wh per metre per kg of payload
 T_REF = 25.0                 # temperature at which efficiency is nominal

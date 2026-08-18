@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Products &middot; RoboFetch{% endblock %}
+
+{% block content %}
+<h1>Products</h1>
+{% if error %}<p class="bad"><strong>{{ error }}</strong></p>{% endif %}
+
+<div class="scroll">
+<table>
+  <thead>
+    <tr><th>ID</th><th>Name</th><th>Category</th><th class="num">Weight</th>
+        <th class="num">Stock</th><th>Shelf</th><th>Pick point</th><th>Model</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for p in products %}
+      <tr>
+        <td class="mono">{{ p.product_id }}</td>
+        <td>{{ p.name }}</td>
+        <td class="muted">{{ p.category }}</td>
+        <td class="num">{{ p.weight_kg }}</td>
+        <td class="num {{ 'bad' if p.stock == 0 }}">{{ p.stock }}</td>
+        <td class="muted">{{ p.shelf_id }}</td>
+        <td class="muted mono small">{{ p.pick_point_id }}</td>
+        <td class="mono small">{{ p.model_name }}</td>
+        <td>
+          <a href="/admin/products?edit={{ p.product_id }}">Edit</a>
+          <form method="post" action="/admin/products/delete" class="inline">
+            <input type="hidden" name="product_id" value="{{ p.product_id }}">
+            <button type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="9" class="empty">No products &mdash; add one below.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h2>{% if editing %}Edit {{ editing.product_id }}{% else %}Add a product{% endif %}</h2>
+<form method="post" action="/admin/products">
+  <label for="product_id">Product ID</label>
+  <input id="product_id" name="product_id" required
+         value="{{ editing.product_id if editing else '' }}">
+
+  <label for="name">Name</label>
+  <input id="name" name="name" required value="{{ editing.name if editing else '' }}">
+
+  <label for="category">Category</label>
+  <input id="category" name="category" value="{{ editing.category if editing else '' }}">
+
+  <label for="weight_kg">Weight (kg)</label>
+  <input id="weight_kg" name="weight_kg" type="number" step="0.1" min="0" required
+         value="{{ editing.weight_kg if editing else '1.0' }}">
+
+  <label for="stock">Stock</label>
+  <input id="stock" name="stock" type="number" min="0" required
+         value="{{ editing.stock if editing else '1' }}">
+
+  <label for="shelf_id">Shelf</label>
+  <select id="shelf_id" name="shelf_id">
+    {% for s in shelves %}
+      <option value="{{ s.shelf_id }}"
+        {{ 'selected' if editing and editing.shelf_id == s.shelf_id }}>{{ s.shelf_id }}</option>
+    {% endfor %}
+  </select>
+
+  <label for="pick_point_id">Pick point</label>
+  <select id="pick_point_id" name="pick_point_id">
+    {% for k in pick_points %}
+      <option value="{{ k.pick_point_id }}"
+        {{ 'selected' if editing and editing.pick_point_id == k.pick_point_id }}>
+        {{ k.pick_point_id }} ({{ k.x }}, {{ k.y }})</option>
+    {% endfor %}
+  </select>
+
+  <label for="model_name">Simulator model</label>
+  <input id="model_name" name="model_name" required
+         value="{{ editing.model_name if editing else 'parcel_1' }}">
+
+  <button type="submit">{% if editing %}Save changes{% else %}Add product{% endif %}</button>
+</form>
+
+{% if editing %}<p><a href="/admin/products">Cancel editing</a></p>{% endif %}
+{% endblock %}

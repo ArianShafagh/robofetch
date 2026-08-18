@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Database &middot; RoboFetch{% endblock %}
+
+{% block content %}
+<h1>Database</h1>
+
+<p>
+  {% for t in tables %}
+    <a href="/admin/db?table={{ t.name }}">{{ t.name }}</a> ({{ t.rows }}){{ ", " if not loop.last }}
+  {% endfor %}
+</p>
+
+{% if error %}<p class="bad"><strong>{{ error }}</strong></p>{% endif %}
+
+{% if selected %}
+  <h2>{{ selected.table }} &mdash; {{ total }} row(s), from {{ offset }}</h2>
+  <div class="scroll">
+  <table>
+    <thead>
+      <tr>{% for c in selected.columns %}<th>{{ c }}</th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      {% for row in selected.rows %}
+        <tr>
+          {% for c in selected.columns %}
+            <td class="small">{{ row[c] if row[c] is not none else '' }}</td>
+          {% endfor %}
+        </tr>
+      {% else %}
+        <tr><td colspan="{{ selected.columns|length }}" class="empty">Empty.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    {% if offset > 0 %}
+      <a href="/admin/db?table={{ selected.table }}&offset={{ [offset - limit, 0]|max }}">
+        &larr; previous {{ limit }}</a>
+    {% endif %}
+    {% if offset + limit < total %}
+      <a href="/admin/db?table={{ selected.table }}&offset={{ offset + limit }}">
+        next {{ limit }} &rarr;</a>
+    {% endif %}
+  </p>
+{% endif %}
+{% endblock %}

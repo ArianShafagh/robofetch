@@ -85,6 +85,19 @@ Wait for this line before ordering:
 [task_manager]: Localized and ready - orders submitted now will execute.
 ```
 
+### Sign in
+
+Open **http://localhost:8000** — the web app requires a login. Two roles are seeded on first run:
+
+| Username | Password | Can do |
+|---|---|---|
+| `admin` | `admin` | Everything, plus product/delivery-point CRUD and the database browser |
+| `controller` | `controller` | Place and track orders, watch the robot, return it to its station, emergency stop |
+
+Change them from the Admin page, or set `ROBOFETCH_ADMIN_PASSWORD` and
+`ROBOFETCH_CONTROLLER_PASSWORD` **before the first launch**. The login page warns while a default
+is still in use.
+
 ### Order something
 
 Open **http://localhost:8000** in a browser — pick a product and a destination, see the cost and
@@ -97,6 +110,111 @@ the verdict, then confirm. Or from the terminal:
 That prints the admission verdict, follows the order through every state, then checks the
 parcel's **real position in Gazebo** against the delivery bay. `./scripts/order.sh --list` shows
 the catalogue.
+
+### Send the robot home
+
+**Return the robot to its station** on the `/robot` or `/orders` page asks for confirmation, then
+queues the trip as an order of its own — so it waits for the delivery in progress rather than
+abandoning a parcel mid-carry. It is never refused: going home is the one job that leaves a
+struggling robot better off. From the terminal:
+
+```bash
+curl -X POST http://localhost:8000/api/orders/return
+```
+
+### Emergency stop
+
+The red **EMERGENCY STOP** button is in the header of every page. One click, no confirmation —
+by the time you have answered "are you sure?" the thing you were worried about has happened.
+
+It cancels the navigation goal, brakes, fails the running order and everything queued — and then
+it is finished. There is **nothing to clear afterwards**: no latch, no banner, no state that
+outlives the click or your session. The robot is left standing where it stopped, keeping any
+parcel it held, and is immediately ready for new work.
+
+It does not drive home. Sending it back is a separate, deliberate press of **Return to station**
+— and if it is still holding a parcel, that trip puts the parcel down before moving.
+
+The button sits alone at the far right of the header, with empty space beside it. That gap is
+what protects against an accidental press; there is deliberately no "are you sure?" step to slow
+down a real one.
+
+```bash
+curl -X POST http://localhost:8000/api/estop
+```
+
+### Administration
+
+Sign in as `admin` for:
+
+- **Products** — add, update, delete catalogue items
+- **Delivery points** — the warehouse destinations
+- **Database browser** — read-only view of every table, with hashes and tokens redacted
+- **Users** — add accounts, change passwords, assign roles
+
+---
+
+## The web app, page by page
+
+The pages carry no explanatory text — they show data and controls only. This is the reference
+for what each one means.
+
+| Page | What it is |
+|---|---|
+| `/login` | Sign in. Any page you ask for while signed out sends you here and returns you afterwards. |
+| `/` | The order form. Only products still on their shelves are offered; the catalogue table below shows everything, including delivered items at stock 0. |
+| `/preview` | The cost and the accept/refuse verdict, **before** anything is ordered. Nothing is committed until you confirm. |
+| `/orders` | Every order this run, newest first, plus delivery statistics. Refreshes every 2 s. |
+| `/robot` | Battery, motor temperature, condition, duty state, payload, distance — the inputs to the accept/refuse decision. Position is deliberately not shown. Refreshes every 2 s. |
+| `/return` | Confirms sending the robot to its station, and shows what the trip costs. |
+| `/admin` | Table row counts, user management, and links to the pages below. |
+| `/admin/products` | Product CRUD. |
+| `/admin/delivery-points` | Delivery-point CRUD. |
+| `/admin/db` | Read-only browse of every table. |
+
+### Reading the order preview
+
+- **Route** / **Return to station** — metres out, and metres home afterwards.
+- **Energy** / **Energy to get home** — the return leg is costed even though the customer never
+  sees it, because a job the robot cannot come back from is not a job it can take.
+- **Orders already queued** / **Energy reserved** / **Battery at start** — appear only when work
+  is already in flight. This order is costed against the battery the robot will have *after*
+  that work, so these rows explain why the figure is lower than the one on `/robot`.
+- **decided by** — `model` means the classifier was consulted and agreed; `policy` means the
+  deterministic gates decided alone (which is also what happens when the AI service is down).
+
+### Editing products
+
+A product is a catalogue entry pointing at **one physical parcel** in the simulator.
+
+- **Simulator model** must be a parcel that exists in `warehouse.sdf` — `parcel_1` … `parcel_6`.
+  Anything else sends the robot to the shelf to find nothing, and the order fails after three
+  grab attempts.
+- **Stock** is really "is the parcel on its shelf?". It drops to 0 on delivery and is restored on
+  restart. See *Known limitations* — stock above 1 describes a warehouse that does not exist.
+- An existing product ID is updated in place; a new one is created.
+
+### Editing delivery points
+
+Coordinates are in the Gazebo world frame, which equals the map frame, so the numbers are
+literal. Keep destinations ~1 m apart and 0.6 m clear of walls and shelves: parcels sit below the
+lidar plane, so stacking deliveries on one point creates an obstacle the robot cannot see.
+
+### Looking at the database directly
+
+**phpMyAdmin will not work.** It is a MySQL/MariaDB tool; RoboFetch uses **SQLite**, which is a
+single file (`~/robofetch_ws/robofetch.db`) with no server to connect to. The equivalent is
+`sqlite-web`, which gives you the same browse-and-query experience in a browser:
+
+```bash
+./robofetch_venv/bin/pip install sqlite-web
+./robofetch_venv/bin/sqlite_web ~/robofetch_ws/robofetch.db --port 8081
+```
+
+Then open **http://localhost:8081**: browse tables, run arbitrary SQL, edit rows, export CSV.
+Avoid writing to the database while a delivery is running — it will fight the API for SQLite's
+write lock. Command-line alternatives: `sqlite3 ~/robofetch_ws/robofetch.db` (built in), or the
+desktop *DB Browser for SQLite* (`sudo apt install sqlitebrowser`).
 
 ### Stop
 
@@ -188,7 +306,7 @@ formula and records the decision as made by policy alone.
 ## Testing
 
 ```bash
-# 65 unit + integration tests, no simulator needed, ~4 s
+# 155 unit + integration tests, no simulator needed, ~2 min
 source install/setup.bash
 ./robofetch_venv/bin/python -m pytest src/robofetch_core/test/ src/robofetch_bridge/test/ -v
 ```
@@ -209,23 +327,27 @@ source install/setup.bash
 Needs a freshly launched stack; it checks the parcels are on their shelves and says so if not.
 `--quick` skips the two slow physical checks.
 
-### Requirements evidence — last full run, 15/15
+### Requirements evidence — last full run, 26/26
 
 | Req | Check | Result |
 |---|---|---|
 | UC1/UC2 | order by product ID, tracked to completion | order 1, accepted by model |
-| UC4 | parcel physically delivered | **0.65 m** from the bay, moved 2.91 m (Gazebo) |
+| UC4 | parcel physically delivered | **0.44 m** from the bay, moved 3.23 m (Gazebo) |
 | UC5 | catalogue and layout served from the database | 6 products, 2 destinations |
-| UC6 | analytics agree with the orders table | 3/5 completed, 1 refused |
-| UC9 | preview returns cost and verdict | 8.6 m, 6.11 Wh, peak 57.5 °C |
+| UC6 | analytics agree with the orders table | 3/6 completed, 2 refused, rate 0.75 |
+| UC9 | preview returns cost and verdict | 8.6 m, 6.11 Wh, peak 56.8 °C |
+| FR3 | delivered product no longer orderable | 5 of 6 orderable; re-order refused "out of stock" |
 | FR5 | unserviceable order refused with a reason | "SKU-1002 is out of stock" |
-| FR6 | orders served oldest-first | submitted [3, 4], started [3, 4] |
+| FR6 | orders served oldest-first | submitted [4, 5], started [4, 5] |
 | FR8 | failing grab retried 3× then failed | failed after 3 attempts, returned to station |
-| FR10 | battery, temperature, condition tracked | 67.7%, 50.8 °C, 99.76% |
-| FR12 | run logged to CSV for ML | 34 samples |
-| NFR1 | preview including the ML call under 2 s | **368 ms** |
+| FR10 | battery, temperature, condition tracked | 85.2%, 51.2 °C, 99.97% |
+| FR11 | idle robot returns to its station and recharges | docked, then 87.3% → 100.0% |
+| FR12 | run logged to CSV for ML | 35 samples |
+| NFR1 | preview including the ML call under 2 s | **400 ms** |
 | NFR3 | pages render server-side, no JavaScript | all 200, no `<script>` |
 | C2 | classifier consulted inside the workflow | `decided_by=model` |
+| C2 | in-flight work reserved against the next decision | robot at 100%, next order costed from **78.4%** (1 order holding 4.76 Wh) |
+| C2 | reservation released when the order finishes | 0 reserved after order 1 ended |
 
 ---
 
@@ -250,15 +372,26 @@ Needs a freshly launched stack; it checks the parcels are on their shelves and s
 
 Documented rather than hidden — `HANDOVER.md` §7 has the full list.
 
-- **Delivery accuracy is ~0.6–0.8 m.** `DetachableJoint` welds the parcel wherever it lies at
-  grab time and releases it at that same offset.
+- **Delivery accuracy is ~0.25–0.35 m.** `DetachableJoint` still welds the parcel wherever it
+  lies at grab time and releases it at that same offset, so the residual error is whatever gap
+  the robot parks at plus Nav2's goal tolerance. It used to be 0.6–0.8 m, because the robot
+  parked without facing the parcel and the gripper accepted anything within 0.85 m in any
+  direction — the drop inherited an error created at grab time.
 - **Catalogue weight is not the simulated parcel mass.** Parcels stay at 0.2 kg with near-zero
   friction — the setting that took delivery success from 1/3 to 3/3, because a heavier or
   higher-friction parcel dragged and made the controller abort. Catalogue weight drives the
   energy model only.
 - **Reliability tracks CPU load.** On a saturated machine, goals abort and localization degrades.
-- **Cancelling does not stop the robot** once an order has started.
+- **Cancelling an order does not stop the robot** once it has started — use the emergency stop,
+  which does (it cancels the Nav2 goal and brakes).
 - **No SLAM.** The map is generated analytically from world geometry.
+- **Only the HTML pages require a login.** The REST API is deliberately open: the acceptance
+  suite and the helper scripts in `scripts/` are unauthenticated clients, and this is a
+  single-user simulator on one machine. Facing a network, `/api/*` would need the same session
+  check and every script would need a token.
+- **The robot pushes parcels it has already delivered.** The station and both delivery bays sit
+  on the line y = −2.2, and parcels are below the lidar plane, so driving home shoves the parcel
+  just dropped. `HANDOVER.md` §0 lists three candidate fixes.
 
 ---
 

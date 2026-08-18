@@ -12,7 +12,17 @@
 # Listing only the former is how five orphaned condition monitors accumulated across restarts,
 # each still publishing /robot/telemetry, so the web tier saw battery and temperature readings
 # jumping between several stale robots at once.
-PATTERN='gz|ruby|rviz2|gripper_node|task_manager|robot_state|parameter_bridg|map_server|amcl|lifecycle_manag|controller_serv|smoother_server|planner_server|behavior_server|bt_navigator|waypoint_follow|velocity_smooth|collision_monit|opennav_docking|ros2'
+#
+# `route_server` was missing from this list until 2026-08-18 and cost hours. It is new in Nav2
+# Jazzy, so it postdates the rest of the line. The symptom is vicious precisely because it does
+# NOT look like a leftover-process problem: the old route_server keeps its node name on the
+# network, the next run starts its own, and two nodes now answer to /route_server. The new
+# lifecycle manager's transitions go astray, bringup ends with "Failed to bring up all requested
+# nodes", and with no navigation stack there is no `map` frame at all - so RViz shows nothing and
+# the robot never localizes. One survivor from a previous run breaks every run after it.
+#
+# If you add a Nav2 server, add it here. `--check` below exists to catch the omission.
+PATTERN='gz|ruby|rviz2|gripper_node|task_manager|robot_state|parameter_bridg|map_server|amcl|lifecycle_manag|controller_serv|smoother_server|planner_server|behavior_server|bt_navigator|waypoint_follow|velocity_smooth|collision_monit|opennav_docking|route_server|ros2'
 
 # BOTH web services run as `python -m uvicorn robofetch_<something>`, so their process NAME is
 # just "python" - far too generic to put in PATTERN without killing unrelated work. They have
@@ -41,6 +51,26 @@ pids_now() {
     printf '%s\n' "$snapshot" | grep -E "${API_PATTERN}" | awk '{print $1}'
   } | sort -u
 }
+
+# `./scripts/stop.sh --check` names every live ROS-looking process this script would NOT kill,
+# without killing anything. Run it while the system is up: anything listed is a future leftover
+# waiting to break the next launch, exactly as route_server did.
+if [ "${1:-}" = "--check" ]; then
+  missed=$(ps -eo pid,comm --no-headers | while read -r pid comm; do
+    echo " $comm" | grep -qE "[[:space:]](${PATTERN})" && continue
+    # Only ROS-shaped names; this box runs plenty of unrelated software.
+    echo "$comm" | grep -qE "_server$|_node$|amcl|_monit|_follow|_smooth|_bridg|_docking|nav" \
+      && echo "  $comm (pid $pid)"
+  done | sort -u)
+  if [ -z "$missed" ]; then
+    echo "[stop] --check: every live ROS process is covered by PATTERN."
+  else
+    echo "[stop] --check: these would SURVIVE stop.sh and break the next launch:"
+    echo "$missed"
+    exit 1
+  fi
+  exit 0
+fi
 
 for signal in TERM TERM KILL; do
   pids=$(pids_now)

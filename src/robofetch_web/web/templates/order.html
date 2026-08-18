@@ -3,12 +3,10 @@
 
 {% block content %}
 <h1>New order</h1>
-<p class="muted">
-  Choose a product and a destination. The next screen shows what the job will cost and whether
-  the robot will accept it &mdash; nothing is ordered until you confirm.
-</p>
-
-<form method="post" action="/preview" class="card">
+{# Only products still on their shelves may be ordered. Once a parcel has been delivered it is
+   at the bay, so ordering it again would send the robot to an empty pick point. #}
+{% if products %}
+<form method="post" action="/preview" >
   <label for="product_id">Product</label>
   <select id="product_id" name="product_id" required>
     {% for p in products %}
@@ -27,16 +25,19 @@
 
   <button type="submit">Check availability</button>
 </form>
+{% else %}
+<p><strong>Nothing left to order.</strong></p>
+{% endif %}
 
 <h2>Catalogue</h2>
 <div class="scroll">
 <table>
   <thead>
     <tr><th>ID</th><th>Name</th><th>Category</th><th class="num">Weight</th>
-        <th>Shelf</th><th class="num">Stock</th></tr>
+        <th>Shelf</th><th class="num">Stock</th><th>Status</th></tr>
   </thead>
   <tbody>
-    {% for p in products %}
+    {% for p in catalogue %}
       <tr>
         <td class="mono">{{ p.product_id }}</td>
         <td>{{ p.name }}</td>
@@ -44,6 +45,9 @@
         <td class="num">{{ p.weight_kg }} kg</td>
         <td class="muted">{{ p.shelf_id }}</td>
         <td class="num">{{ p.stock }}</td>
+        <td class="muted">
+          {% if p.stock > 0 %}on the shelf{% else %}delivered &mdash; not orderable{% endif %}
+        </td>
       </tr>
     {% endfor %}
   </tbody>

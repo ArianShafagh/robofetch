@@ -35,6 +35,7 @@ class RosLink(Node):
         self._on_telemetry = on_telemetry
 
         self.order_pub = self.create_publisher(String, "/orders/new", 10)
+        self.estop_pub = self.create_publisher(String, "/robot/estop", 10)
         self.create_subscription(String, "/orders/status", self._handle_status, 10)
         self.create_subscription(String, "/robot/telemetry", self._handle_telemetry, 10)
         self.create_subscription(PoseWithCovarianceStamped, "/amcl_pose",
@@ -61,9 +62,39 @@ class RosLink(Node):
             "weight_kg": product["weight_kg"],
             "pickup": list(pickup),
             "dropoff": list(dropoff),
+            # Where the shelf is, so the robot can face the parcel when it parks. It cannot work
+            # this out from the parcel's own pose: /model/<parcel>/pose is event-driven and a
+            # parcel sitting still on a shelf never publishes, so that pose is simply absent.
+            "shelf": [product.get("shelf_x"), product.get("shelf_y")],
         })))
         self.get_logger().info(
             f"Submitted order {order_id} ({product['product_id']}) to the robot.")
+
+    def submit_return(self, order_id, station):
+        """Hand a "go home" task to the robot on the SAME topic as a delivery.
+
+        Same topic, same queue, same FIFO position - which is the point. A separate "drive home
+        now" channel would let the operator interrupt a delivery mid-carry, and a parcel abandoned
+        on the gripper is the failure this system works hardest to avoid.
+        """
+        self.order_pub.publish(String(data=json.dumps({
+            "id": order_id,
+            "kind": "return",
+            "dropoff": [station["x"], station["y"]],
+        })))
+        self.get_logger().info(f"Submitted return-to-station task {order_id} to the robot.")
+
+    def publish_estop(self, action):
+        """Engage ("stop") or release ("clear") the emergency stop.
+
+        Its own topic rather than the order queue, and this is the one case where bypassing the
+        queue is right: an emergency stop that waited its turn behind a delivery would not be an
+        emergency stop. Returns the subscriber count so the caller can tell the operator when
+        nothing was listening - a stop button that silently reached nobody is worse than none.
+        """
+        self.estop_pub.publish(String(data=json.dumps({"action": action})))
+        self.get_logger().warn(f"Published emergency-stop action '{action}'.")
+        return self.estop_pub.get_subscription_count()
 
     # ------------------------------------------------------------------ incoming
     def _handle_status(self, msg):
@@ -95,7 +126,9 @@ class RosThread:
     def __init__(self, on_status=None, on_telemetry=None):
         rclpy.init()
         self.node = RosLink(on_status=on_status, on_telemetry=on_telemetry)
-        self._executor = MultiThreadedExecutor()
+        # Bounded to what this node needs - see gripper_node.main. It only fans out
+        # status and telemetry callbacks.
+        self._executor = MultiThreadedExecutor(num_threads=2)
         self._executor.add_node(self.node)
         self._thread = threading.Thread(target=self._executor.spin, daemon=True)
 

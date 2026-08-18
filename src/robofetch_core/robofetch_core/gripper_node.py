@@ -36,8 +36,25 @@ class GripperNode(Node):
         # Nominal parking gap is ~0.35 m, but Nav2 only guarantees 0.25 m goal
         # tolerance, so anything under ~0.7 m produces spurious grab failures.
         self.declare_parameter("hold_tolerance", 0.85)
+        # A grab must be IN FRONT of the robot, not merely nearby. Without this the gripper
+        # welds whatever happens to be within `hold_tolerance` in any direction - including a
+        # parcel sitting beside or behind the robot. The joint then holds it at that offset for
+        # the whole journey and releases it there, which is why deliveries used to land 0.6-0.8 m
+        # from the bay: the error was introduced at GRAB time, not at release.
+        #
+        # 60 degrees either side is generous enough to absorb Nav2's heading error at the goal
+        # while still refusing anything genuinely off to one side.
+        self.declare_parameter("grab_half_angle_deg", 60.0)
+        # And it must not be underneath the robot either - "too close" means the approach
+        # overshot and the chassis is probably on top of it.
+        self.declare_parameter("min_grab_distance", 0.15)
         # How long to wait after commanding attach/detach before verifying.
         self.declare_parameter("settle_time", 1.0)
+        # How many times to command a detach before admitting the parcel is stuck. A detach
+        # that silently does not take is far more damaging than a failed grab: the robot keeps
+        # working while carrying a parcel it believes it put down, so every later delivery is
+        # wrong. Retrying is cheap; the robot is stationary at the bay while it happens.
+        self.declare_parameter("release_attempts", 3)
         self.declare_parameter("robot_model", "robofetch")
         # EVERY item that has a DetachableJoint on the robot must be listed here.
         # Gazebo creates all of those joints ALREADY ATTACHED at start-up, so any item we
@@ -53,7 +70,11 @@ class GripperNode(Node):
         self.declare_parameter("carry_offset", 0.55)
 
         self.hold_tolerance = self.get_parameter("hold_tolerance").value
+        self.grab_half_angle = math.radians(
+            float(self.get_parameter("grab_half_angle_deg").value))
+        self.min_grab_distance = float(self.get_parameter("min_grab_distance").value)
         self.settle_time = self.get_parameter("settle_time").value
+        self.release_attempts = max(1, int(self.get_parameter("release_attempts").value))
         self.robot_model = self.get_parameter("robot_model").value
         self.world = self.get_parameter("world").value
         self.carry_offset = self.get_parameter("carry_offset").value
@@ -223,6 +244,22 @@ class GripperNode(Node):
         rx, ry = robot[0], robot[1]
         return math.hypot(ix - rx, iy - ry)
 
+    def _bearing_to(self, item):
+        """Angle to the item relative to where the robot is FACING, in radians.
+
+        0 means dead ahead, +-pi means directly behind. This is what turns "something is
+        nearby" into "something is in front of the gripper", which is the difference between
+        picking a parcel up off its shelf and welding one that happened to be alongside.
+        """
+        robot = self._robot_position()
+        if item not in self.poses or robot is None:
+            return None
+        ix, iy, _ = self.poses[item]
+        heading = math.atan2(iy - robot[1], ix - robot[0])
+        # Wrapped to (-pi, pi] so the comparison is a simple magnitude test.
+        return math.atan2(math.sin(heading - self._amcl_yaw),
+                          math.cos(heading - self._amcl_yaw))
+
     # --------------------------------------------------------------- services
     def on_grab(self, request, response):
         item = request.item or "item_1"
@@ -246,6 +283,28 @@ class GripperNode(Node):
             response.distance = gap_before
             response.message = (f"{item} is {gap_before:.2f} m away, "
                                 f"further than the {self.hold_tolerance:.2f} m the gripper can reach")
+            self.get_logger().warn(f"Grab failed: {response.message}")
+            return response
+
+        # Too close means the approach overshot and the robot is probably sitting on it.
+        if gap_before < self.min_grab_distance:
+            response.success = False
+            response.distance = gap_before
+            response.message = (f"{item} is only {gap_before:.2f} m away - the robot has "
+                                f"overshot it; backing off and re-approaching")
+            self.get_logger().warn(f"Grab failed: {response.message}")
+            return response
+
+        # And it must be IN FRONT. A parcel beside the robot can be reached by the joint, but
+        # it would then be carried at that sideways offset the whole way and released there.
+        bearing = self._bearing_to(item)
+        if bearing is not None and abs(bearing) > self.grab_half_angle:
+            response.success = False
+            response.distance = gap_before
+            response.message = (
+                f"{item} is {math.degrees(abs(bearing)):.0f} deg off the robot's heading, "
+                f"outside the {math.degrees(self.grab_half_angle):.0f} deg the gripper faces - "
+                "the robot must turn towards it first")
             self.get_logger().warn(f"Grab failed: {response.message}")
             return response
 
@@ -278,35 +337,72 @@ class GripperNode(Node):
         return response
 
     def on_release(self, request, response):
+        """Let go of an item, and keep trying until the joint agrees that it has.
+
+        A single detach is not enough. The DetachableJoint's detach topic is fire-and-forget,
+        and a message published while Gazebo is mid-step can be dropped with no error anywhere:
+        the service used to return "failed", the task manager gave up, and the robot drove off
+        still carrying the parcel and dragged it through every subsequent delivery. One retry
+        loop, verified against the joint's own state, removes the whole failure mode.
+        """
         item = request.item or self.held_item or "item_1"
         self._watch_state(item)
         _, detach = self._pubs_for(item)
 
-        detach.publish(Empty())
-        time.sleep(self.settle_time)
+        released, evidence = False, ""
+        for attempt in range(1, self.release_attempts + 1):
+            detach.publish(Empty())
+            time.sleep(self.settle_time)
 
-        if self.held_item == item:
+            still_held = self._is_held(item)
+            if still_held is None:
+                # The joint has never reported. Fall back to assuming the command took, but
+                # SAY SO - this is the weak check, exactly as in on_grab.
+                released = True
+                evidence = "the joint has not reported its state, so this is unverified"
+                break
+            if not still_held:
+                released = True
+                evidence = (f"joint reports 'detached'"
+                            + (f" after {attempt} attempts" if attempt > 1 else ""))
+                break
+
+            evidence = f"joint still reports '{self.attach_state[item]}'"
+            self.get_logger().warn(
+                f"Release attempt {attempt}/{self.release_attempts} did not take "
+                f"({evidence})"
+                f"{'; retrying.' if attempt < self.release_attempts else '.'}")
+
+        # Only stop calling ourselves the holder once the joint has actually let go. Clearing
+        # this unconditionally is how the node came to believe it was empty-handed while
+        # dragging a parcel around.
+        if released and self.held_item == item:
             self.held_item = None
-        gap = self._gap_to_gripper(item)
 
-        # A release that did not actually let go strands the parcel on the gripper and the
-        # next delivery drags it around, so confirm rather than assume.
-        still_held = self._is_held(item)
-        response.success = still_held is not True
+        gap = self._gap_to_gripper(item)
+        response.success = released
         response.distance = gap if gap is not None else -1.0
-        if response.success:
-            response.message = f"released {item}"
+        if released:
+            response.message = f"released {item} ({evidence})"
             self.get_logger().info(response.message)
         else:
-            response.message = f"detach command sent but the joint still reports {item} attached"
-            self.get_logger().warn(f"Release failed: {response.message}")
+            response.message = (f"{item} is STILL ATTACHED after {self.release_attempts} "
+                                f"detach attempts ({evidence})")
+            self.get_logger().error(f"Release failed: {response.message}")
         return response
 
 
 def main():
     rclpy.init()
     node = GripperNode()
-    executor = rclpy.executors.MultiThreadedExecutor()
+    # num_threads is bounded because `MultiThreadedExecutor()` with no argument spawns one
+    # worker per CPU - twelve on this machine - for a node that needs two or three. Fewer
+    # threads, less context switching, same behaviour.
+    #
+    # It does NOT fix this node's CPU use, and it was measured rather than assumed: the node
+    # still burns most of a core because /clock is published at ~500 Hz and every node with
+    # use_sim_time processes all of it. See HANDOVER 5.13 for that, which is the real cost.
+    executor = rclpy.executors.MultiThreadedExecutor(num_threads=2)
     executor.add_node(node)
     try:
         executor.spin()

@@ -4,21 +4,23 @@
 {% block content %}
 <h1>Orders</h1>
 
-<div class="tiles">
-  <div class="tile"><span class="value">{{ stats.total_orders }}</span><span class="label">total</span></div>
-  <div class="tile"><span class="value ok">{{ stats.completed }}</span><span class="label">delivered</span></div>
-  <div class="tile"><span class="value bad">{{ stats.failed }}</span><span class="label">failed</span></div>
-  <div class="tile"><span class="value">{{ stats.refused }}</span><span class="label">refused</span></div>
-  <div class="tile"><span class="value">
-    {{ '%.0f%%'|format(stats.success_rate * 100) if stats.success_rate is not none else '-' }}
-  </span><span class="label">success rate</span></div>
-  <div class="tile"><span class="value">
-    {{ stats.average_delivery_seconds if stats.average_delivery_seconds else '-' }}{{ 's' if stats.average_delivery_seconds }}
-  </span><span class="label">avg. delivery</span></div>
-</div>
+<table>
+  <tbody>
+    <tr><th>Total deliveries</th><td class="num">{{ stats.total_orders }}</td>
+        <th>Delivered</th><td class="num ok">{{ stats.completed }}</td></tr>
+    <tr><th>Failed</th><td class="num bad">{{ stats.failed }}</td>
+        <th>Refused</th><td class="num">{{ stats.refused }}</td></tr>
+    <tr><th>Success rate</th>
+        <td class="num">{{ '%.0f%%'|format(stats.success_rate * 100)
+                            if stats.success_rate is not none else '-' }}</td>
+        <th>Avg. delivery</th>
+        <td class="num">{{ stats.average_delivery_seconds ~ ' s'
+                           if stats.average_delivery_seconds else '-' }}</td></tr>
+  </tbody>
+</table>
 
-<p class="muted small">
-  This page is a snapshot &mdash; reload it to see progress.
+<p>
+  <a href="/return">Return the robot to its station</a>
 </p>
 
 <div class="scroll">
@@ -33,11 +35,18 @@
     {% for o in orders %}
       <tr>
         <td class="num">{{ o.id }}</td>
-        <td>
-          <span class="mono">{{ o.product_id }}</span>
-          <span class="muted small">{{ o.product_name }}</span>
-        </td>
-        <td class="muted">{{ o.delivery_name or o.delivery_id }}</td>
+        {# A return carries no product and its destination is the station, which is not a
+           delivery point - so both cells describe the task itself instead. #}
+        {% if o.kind == 'return' %}
+          <td><span class="muted">return to station</span></td>
+          <td class="muted">station</td>
+        {% else %}
+          <td>
+            <span class="mono">{{ o.product_id }}</span>
+            <span class="muted small">{{ o.product_name }}</span>
+          </td>
+          <td class="muted">{{ o.delivery_name or o.delivery_id }}</td>
+        {% endif %}
         <td><span class="status s-{{ o.status }}">{{ o.status }}</span></td>
         <td class="num">{{ o.attempts or '-' }}</td>
         <td class="num muted small">
