@@ -17,15 +17,21 @@ That mutual coupling is what makes this a model rather than three independent co
 from dataclasses import dataclass, asdict
 
 # ------------------------------------------------------------------ battery / energy
-# Sized so a charge is worth about THREE deliveries. A larger pack would be more realistic for
-# a real warehouse robot, but then battery would never bind inside a demo session and the
-# accept/refuse decision would have nothing to refuse on: the whole point of C2 is visible only
-# if the robot actually runs low while someone is watching.
+# Sized so a charge is worth a SINGLE heavy delivery, or about three of the lightest. A larger
+# pack would be more realistic for a real warehouse robot, but then battery would never bind
+# inside a demo session and the accept/refuse decision would have nothing to refuse on: the whole
+# point of C2 is visible only if the robot actually runs low while someone is watching.
+#
+# Measured across the whole catalogue from a FULL battery - note these are the figures AFTER the
+# robot has driven home again, which is what RESERVE_PERCENT is judged against, not the outbound
+# leg alone: the heaviest order (SKU-3001 -> delivery_1, 6.13 Wh) leaves 34.8%, the lightest
+# (SKU-3002 -> delivery_2, 1.85 Wh) leaves 74.9%. All twelve product/bay combinations are still
+# accepted from full, so nothing became unorderable; the robot simply recharges far more often.
 #
 # This constant is load-bearing well beyond this file. The ML training label depends on how much
 # of the pack an order consumes, so CHANGING IT INVALIDATES model.joblib - regenerate and
 # retrain (tools/ml/generate.py then tools/ml/train.py) whenever it moves.
-CAPACITY_WH = 22.0           # nominal usable pack energy
+CAPACITY_WH = 11.0           # nominal usable pack energy
 E_BASE = 0.35                # Wh per metre, unloaded
 E_LOAD = 0.08                # Wh per metre per kg of payload
 T_REF = 25.0                 # temperature at which efficiency is nominal
