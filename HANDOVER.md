@@ -28,8 +28,8 @@ simulator, with every physical claim confirmed against Gazebo rather than agains
 >
 > `git@github.com:ArianShafagh/robofetch.git`, branch `main`.
 
-The **written report** is `report/RoboFetch_Software_Engineering_Report.tex`, about 1820 lines,
-15 chapters and 2 appendices, with 33 figures. It has **never been compiled** — LaTeX is not
+The **written report** is `report/RoboFetch_Software_Engineering_Report.tex`, about 2100 lines,
+15 chapters and 2 appendices, with 40 figures (26 charts and diagrams, 14 screenshots). It has **never been compiled** — LaTeX is not
 installed here; it targets Overleaf. See `report/README.md`. The three staleness items this
 paragraph used to list are **done**: the UI screenshots have been retaken against the plain
 redesign and the login page (12 new ones, including the e-stop and both admin pages), the
@@ -710,19 +710,35 @@ the launch.
 **Tight gaps trap the robot.** A 0.44 m robot with 0.35 m costmap inflation cannot use a 0.9 m gap.
 `shelf_3` is now flush against the east wall so no dead-end exists. **Never leave gaps under ~1.2 m.**
 
-**The same trap still exists behind `shelf_1` and `shelf_2`** (found 2026-08-05 — the rule above was
-only ever applied to `shelf_3`). Both shelves end at y = 2.05 while the north wall's inner face is at
-y = 2.95, leaving a **0.90 m corridor** across the whole north side, reachable through the 2.25 m gap
-between the two shelves. Observed live: the robot drove in, wedged itself, and AMCL's belief diverged
-from Gazebo ground truth by **2.85 m** — it reported (−2.03, −0.35) while the robot was really at
-(−1.60, 2.50), inside that corridor. Because the scan was then taken from behind a shelf while the
-costmap was written around the *believed* pose, the robot appeared **enclosed**: the global planner
-failed with *"Failed to create plan with tolerance of 0.500000"* for **every** goal, including the
-open centre of the room. Costmap clears and the wait-recovery did not help.
+**The same trap once existed behind `shelf_1` and `shelf_2` — found 2026-08-05, FIXED.** The rule
+above had only ever been applied to `shelf_3`. Both shelves used to end at y = 2.05 while the north
+wall's inner face is at y = 2.95, leaving a **0.90 m corridor** across the whole north side,
+reachable through the 2.25 m gap between them.
 
-This is very likely the real identity of the "occasional goal abort" in §7. Fix: extend `shelf_1` and
-`shelf_2` north so they are flush with the north wall, exactly as `shelf_3` is flush with the east
-wall — then re-run `scripts/generate_map.py` and rebuild.
+The diagnosis is the part worth keeping, because the symptom pointed nowhere near the cause.
+Observed live: the robot drove in, wedged itself, and AMCL's belief diverged from Gazebo ground
+truth by **2.85 m** — it reported (−2.03, −0.35) while the robot was really at (−1.60, 2.50),
+inside that corridor. Because the scan was then taken from behind a shelf while the costmap was
+written around the *believed* pose, the robot appeared **enclosed**: the global planner failed with
+*"Failed to create plan with tolerance of 0.500000"* for **every** goal, including the open centre
+of the room. Costmap clears and the wait-recovery did not help.
+
+**Fixed** by extending both shelves north to be flush with the wall, exactly as `shelf_3` is flush
+with the east wall, and re-running `scripts/generate_map.py`. Verify it in one line rather than
+trusting this paragraph — geometry is cheap to measure:
+
+```bash
+grep -A3 'name="shelf_1"' src/robofetch_gazebo/worlds/warehouse.sdf | grep -E 'pose|size'
+```
+
+`shelf_1` and `shelf_2` sit at y = 2.25 with depth 1.4, so they span 1.55 → **2.95**; `wall_north`
+is at y = 3.0 with thickness 0.1, so its inner face is **2.95**. Flush, no corridor.
+`scripts/generate_map.py` carries the same three rectangles and a comment saying why all three are
+flush — **keep the two in sync, or the map will disagree with the world.**
+
+This entry used to claim the trap was "very likely the real identity of the occasional goal abort"
+in §7. That attribution never held: goal aborts under load are the CPU-starvation issue in §5.13,
+and they persisted after the shelves were moved.
 
 **Parcels piling up on one drop-off point** made the robot drive into an invisible parcel it had
 already delivered (they're below lidar height). Drop-offs are spread apart.
@@ -834,7 +850,7 @@ like the fault must be:
   than `min_grab_distance` (0.15 m, i.e. the approach overshot and the chassis is on top of it).
 - The delivery approach stops `carry_offset` (0.55 m) **short** of the bay, facing it, so the
   parcel — which rides that far ahead — lands on the bay rather than past it.
-- `delivery_tolerance` 1.1 -> 0.6, and `DELIVERY_TOLERANCE` in the acceptance suite with it.
+- `delivery_tolerance` 1.1 -> 0.7, and `DELIVERY_TOLERANCE` in the acceptance suite with it.
 
 **Measured after:** 0.31 m (shelf_3 -> delivery_1) and 0.24 m (shelf_2 -> delivery_2).
 
@@ -1075,17 +1091,21 @@ three in one request — a stale API answers with `robot_connected: false` and t
 
 ## 6. Milestone status
 
+These are the **v1 construction milestones**, kept as history. Two of them were later removed on
+purpose — a feature built, verified and then deleted is part of the project's story, and §5 and §7
+follow the same convention. For what the system does *now*, read §0.
+
 | # | Milestone | State | Evidence |
 |---|---|---|---|
 | M1 | World + drivable robot | ✅ | `/scan`, `/odom`, `/tf`, `/cmd_vel` bridged; robot drives |
 | M2 | Map + Nav2 navigation | ✅ | A→B→A both SUCCEEDED; AMCL error 0.05–0.14 m |
 | M3 | Gripper + DetachableJoint | ✅ | grab/release/re-attach verified; refuses out-of-reach grabs |
 | M4 | Task Manager, one order | ✅ | full navigate→grab→navigate→release |
-| M5 | **Nearest-neighbour scheduler** | ✅ | submitted `[2,3,1]` → served `[1,3,2]`; NFR2 = 0.0136 ms |
-| M6 | **Grab-retry FSM** | ✅ | 3 attempts w/ backoff → order failed → queue continued |
+| M5 | ~~Nearest-neighbour scheduler~~ | ⛔ superseded | Built and verified in v1 (submitted `[2,3,1]` → served `[1,3,2]`), then **removed**: v2 serves FIFO by order time via `Database.next_pending_order`, which is FR6 |
+| M6 | ~~Grab-retry FSM~~ | ⛔ partly superseded | The state machine was removed; the behaviour it guarded survives as a plain 3-attempt grab then return to station, which is FR8 |
 | M7 | FastAPI + SQLite + bridge | ✅ | HTTP → SQLite → ROS → robot → status back to SQLite |
-| M8 | **Web dashboard** | ✅ | `localhost:8000` — order form, live table, warehouse map, analytics; verified end to end |
-| M9 | **Bringup + tests + report** | ✅ | 63 pytest + 10 acceptance checks, README, UML diagrams |
+| M8 | **Web dashboard** | ✅ | `localhost:8000` — order form, order table, analytics. The v1 live warehouse map is **gone**: v2 is server-rendered with no JavaScript at all (NFR3), and there is no `.js` file under `src/robofetch_web/` |
+| M9 | **Bringup + tests + report** | ✅ | now **23 test cases + 26 acceptance checks** (was 63 + 10 in v1), README, INSTALL, UML diagrams |
 
 ---
 
