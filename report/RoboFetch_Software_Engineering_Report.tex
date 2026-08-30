@@ -1617,8 +1617,11 @@ exactly straight.
 
 \subsection{Response Time}
 The order preview, which includes resolving the product, computing the route, simulating the
-condition model forward and calling the prediction service over HTTP, was measured at 343
-milliseconds against a requirement of two seconds.
+condition model forward and calling the prediction service over HTTP, was measured at 416
+milliseconds in the recorded acceptance run, against a requirement of two seconds. The figure
+varies by a few tens of milliseconds between runs, since it includes an HTTP round trip on a
+machine that is also running a physics simulation; what the requirement asks is that it stay far
+below two seconds, and it does.
 
 That figure was originally much worse, and the reason is described in
 Section~\ref{sec:coldstart}: the very first preview after a restart took 1551 milliseconds and the
@@ -2012,7 +2015,7 @@ FR20 & Session check on every page, role check on the request & Unit test on the
 eight pages; acceptance checks UC12 \\
 FR21 & Table name validated against the schema catalogue & Unit tests on the rejection and on
 redaction \\
-NFR1 & Timeout on the prediction client & Acceptance check NFR1, measured at 343 ms \\
+NFR1 & Timeout on the prediction client & Acceptance check NFR1, measured at 416 ms \\
 NFR2 & Fallback path in the admission workflow & Unit test with an unreachable service \\
 NFR3 & Server-side templates & Acceptance check NFR3 \\
 NFR4 & One-second publication interval & Telemetry record \\

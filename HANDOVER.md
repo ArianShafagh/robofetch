@@ -395,7 +395,7 @@ to understand every part, not just have it work. The approved v2 specification i
 | §3.3 **Complex C2** | Order admission + cost preview — `robofetch_bridge/admission.py` |
 | §3.3 **Complex C3** | Physical delivery verification — `task_manager.execute_order` step 5 |
 | FR8 (3 grab attempts) | `task_manager.execute_order` — acceptance-verified |
-| NFR1 (<2 s preview) | measured **368 ms** — acceptance check |
+| NFR1 (<2 s preview) | measured **416 ms** in the recorded run — acceptance check |
 | NFR2 (AI-down fallback) | `predictor.py` returns None → policy decides alone — unit-tested |
 
 ---
