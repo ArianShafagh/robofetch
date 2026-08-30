@@ -185,9 +185,11 @@ def fig_payload_energy():
 
 
 def fig_delivery_accuracy():
-    # Every delivery distance measured against Gazebo ground truth during testing.
-    measured = [0.66, 0.59, 0.76, 0.65, 0.61, 0.64, 0.72, 0.77, 0.59]
-    tolerance = 1.1
+    # Every delivery distance measured against Gazebo ground truth during testing, all of them
+    # taken after the approach-and-face fix to the grab. The tolerance was tightened from 1.1 m
+    # to 0.7 m at the same time, because the old one no longer discriminated.
+    measured = [0.24, 0.31, 0.44, 0.49, 0.43, 0.38, 0.19, 0.46, 0.33, 0.18]
+    tolerance = 0.7
     fig, ax = plt.subplots(figsize=(6.6, 3.0))
     ax.bar(range(1, len(measured) + 1), measured, color=GREEN, width=0.6)
     ax.axhline(tolerance, color=RED, ls="--", lw=1.2,
@@ -197,7 +199,7 @@ def fig_delivery_accuracy():
     ax.set_xlabel("delivery (in the order measured)")
     ax.set_ylabel("distance from the bay (m)")
     ax.set_title("Delivery accuracy, verified against simulator ground truth")
-    ax.set_ylim(0, 1.25)
+    ax.set_ylim(0, 0.85)
     ax.legend(fontsize=8)
     save(fig, "fig-delivery-accuracy.png")
 
@@ -238,16 +240,18 @@ def fig_category_balance():
 
 def fig_test_composition():
     suites = ["Condition model\n(unit)", "Admission policy\n(unit)",
-              "Database\n(unit)", "API integration\n(integration)"]
-    counts = [18, 14, 19, 14]
+              "Database\n(unit)", "Login & roles\n(integration)",
+              "API integration\n(integration)"]
+    counts = [4, 4, 5, 2, 1]
     fig, ax = plt.subplots(figsize=(6.4, 3.0))
-    bars = ax.bar(suites, counts, color=[GREEN, GREEN, GREEN, BLUE], width=0.58)
+    bars = ax.bar(suites, counts, color=[GREEN, GREEN, GREEN, BLUE, BLUE], width=0.58)
     for bar, value in zip(bars, counts):
         ax.text(bar.get_x() + bar.get_width() / 2, value, str(value),
                 ha="center", va="bottom", fontweight="bold")
-    ax.set_ylabel("test cases")
+    ax.set_ylabel("tests")
     ax.set_title(f"Automated test suite: {sum(counts)} tests, no simulator required")
-    ax.set_ylim(0, 23)
+    # The gate test is parameterised over the eight gated pages, so 16 tests run as 23 cases.
+    ax.set_ylim(0, 7)
     save(fig, "fig-test-composition.png")
 
 
@@ -271,9 +275,11 @@ def fig_acceptance_results():
 
 def fig_test_pyramid():
     fig, ax = plt.subplots(figsize=(5.6, 3.4))
-    tiers = [("Acceptance\n15 checks, live simulator", 0.30, GREEN),
-             ("Integration\n14 tests, faked ROS and AI", 0.62, BLUE),
-             ("Unit\n51 tests, pure logic", 0.96, PURPLE)]
+    # Widths are proportional to the number of checks. The automated suite is deliberately a
+    # small representative set, so the physical layer is now the widest - the shape inverts.
+    tiers = [("Acceptance\n26 checks, live simulator", 0.96, GREEN),
+             ("Integration\n3 tests, faked ROS and AI", 0.28, BLUE),
+             ("Unit\n13 tests, pure logic", 0.52, PURPLE)]
     for index, (label, width, colour) in enumerate(tiers):
         ax.add_patch(Rectangle((0.5 - width / 2, index * 0.9), width, 0.78,
                                facecolor=colour, alpha=0.82, edgecolor="white", lw=2))
@@ -306,7 +312,7 @@ def fig_ml_class_balance():
 
 
 def fig_ml_confusion():
-    matrix = np.array([[447, 26], [27, 1000]])       # held-out test split
+    matrix = np.array([[639, 10], [21, 330]])        # held-out test split
     fig, ax = plt.subplots(figsize=(4.2, 3.6))
     ax.imshow(matrix, cmap="Blues")
     for i in range(2):
@@ -317,15 +323,15 @@ def fig_ml_confusion():
     ax.set_xticks([0, 1]); ax.set_xticklabels(["refuse", "accept"])
     ax.set_yticks([0, 1]); ax.set_yticklabels(["refuse", "accept"])
     ax.set_xlabel("predicted"); ax.set_ylabel("actual")
-    ax.set_title("Confusion matrix on the\nheld-out test split (1500 runs)")
+    ax.set_title("Confusion matrix on the\nheld-out test split (1000 runs)")
     ax.grid(False)
     save(fig, "fig-ml-confusion.png")
 
 
 def fig_ml_importance():
-    features = ["battery_percent", "condition_percent", "route_distance_m",
-                "temperature_c", "payload_kg"]
-    importance = [0.669, 0.202, 0.064, 0.038, 0.027]
+    features = ["battery_percent", "route_distance_m", "condition_percent",
+                "payload_kg", "temperature_c"]
+    importance = [0.608, 0.195, 0.088, 0.072, 0.037]
     fig, ax = plt.subplots(figsize=(6.0, 2.9))
     ax.barh(features[::-1], importance[::-1], color=BLUE, height=0.6)
     for index, value in enumerate(importance[::-1]):
@@ -339,7 +345,7 @@ def fig_ml_importance():
 def fig_ml_pipeline():
     fig, ax = plt.subplots(figsize=(7.4, 2.2))
     boxes = [("tools/ml/generate.py\nsynthetic runs", 0.5, AMBER, "disposable"),
-             ("runs.csv\n6000 labelled runs", 2.3, GREY, ""),
+             ("runs.csv\n4000 labelled runs", 2.3, GREY, ""),
              ("tools/ml/train.py\nrandom forest", 4.1, AMBER, "disposable"),
              ("model.joblib", 5.9, PURPLE, ""),
              ("robofetch_ai\nservice :8001", 7.5, GREEN, "permanent")]

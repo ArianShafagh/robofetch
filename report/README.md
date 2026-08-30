@@ -40,11 +40,13 @@ reference was checked by script before hand-off, but only a real compile proves 
 
 ---
 
-## Screenshots you still need to take
+## Screenshots — all taken
 
-The report currently contains 28 generated figures. Screenshots of the running system are the one
-thing that cannot be produced automatically. Take these, save them into `Figures/` with the names
-below, and add them with the same macro the other figures use:
+The report contains 19 generated charts, 9 UML diagrams and the 14 screenshots below. Screenshots
+of the running system are the one thing that cannot be produced automatically, and **all fourteen
+are now in `Figures/`** — every figure the `.tex` references exists on disk, so nothing compiles
+as a placeholder box. The table is kept as the record of what each one shows, so a retake captures
+the same thing. They are added with the same macro the other figures use:
 
 ```latex
 \uploadedfigure{Figures/shot-order-form.png}{0.9\textwidth}
@@ -53,20 +55,31 @@ below, and add them with the same macro the other figures use:
 
 | Save as | What to capture | Where it belongs |
 |---|---|---|
-| `shot-gazebo-warehouse.png` | Gazebo, whole warehouse, six parcels visible on the shelves | Chapter 7, The Simulated Environment |
-| `shot-rviz-costmap.png` | RViz showing the laser scan and the costmap | Chapter 7 |
-| `shot-order-form.png` | The order form at `localhost:8000` | Chapter 8, Implementation |
-| `shot-preview-accepted.png` | A preview showing **accepted**, with the cost figures | Chapter 8 or 9 |
-| `shot-preview-refused.png` | A preview showing **refused**, with the reason visible | Chapter 9, next to the activity diagram |
-| `shot-orders-page.png` | The order history with a few finished orders | Chapter 8 |
-| `shot-robot-page.png` | The robot condition page | Chapter 8 |
-| `shot-order-script.png` | A terminal running `./scripts/order.sh`, showing the verdict and the ground-truth check at the end | Chapter 12, Testing |
-| `shot-acceptance.png` | A terminal showing the acceptance suite output, 15/15 | Chapter 12 |
-| `shot-launch.png` | The launch terminal at the moment it reports the robot is localized and ready | Chapter 13, Development Environment |
+| `shot-login.png` | The login page, reached by visiting any page signed out | Ch 9, Web Application |
+| `shot-order-form.png` | The order form, signed in as `controller` — header condition strip and the stop button alone at the right | Ch 9 |
+| `shot-preview-accepted.png` | `SKU-3001` to `delivery_1` from a full battery: accepted, ~35% left | Ch 9 |
+| `shot-preview-refused.png` | The same order again after the first completes — refused on the reserve | Ch 11, C2 |
+| `shot-preview-reserved.png` | A preview taken while two orders are still running: the "battery at start" row and the "already in progress" reason | Ch 11, C2 |
+| `shot-stock-consumed.png` | The order page after a delivery: the delivered item at zero stock, marked not orderable | Ch 11 |
+| `shot-orders-page.png` | The order history showing a completed delivery, a refusal and a return trip | Ch 9 |
+| `shot-robot-page.png` | The robot condition page, mid-charge | Ch 9 |
+| `shot-admin-products.png` | Product maintenance, signed in as `admin`, mid-edit | Ch 9 |
+| `shot-admin-db.png` | `/admin/db?table=users`, showing the redacted hash and token columns | Ch 9 |
+| `shot-estop.png` | `/orders` straight after pressing the stop: the running order failed, the queued one failed too | Ch 9 |
+| `shot-gazebo-warehouse.png` | Gazebo, whole warehouse from above, six parcels on the shelves | Ch 8, Simulated Environment |
+| `shot-rviz-costmap.png` | RViz: the laser scan lying on the walls, with costmap inflation | Ch 8 |
+| `shot-launch.png` | The launch console at `Localized and ready`, with the default-password warning above it | Ch 13 |
 
-To get the **refused** preview, order the heaviest product (`SKU-3001`) repeatedly until the
-battery falls below the reserve — the refusal message explains itself, which is what makes it a
-good figure.
+Nine were new and five were retakes, because the originals predated the plain redesign and the
+login page and no longer matched the interface described in the text.
+
+**A missing one would not block a compile.** Each slot uses `\screenshotslot`, which renders a
+labelled placeholder box when the file is absent. Drop the PNG into `Figures/` under the name above
+and it becomes a real figure with no other edit — which is also how a retake is done.
+
+To get the **refused** preview, order the heaviest product (`SKU-3001`) to `delivery_1` twice.
+On the current battery one such delivery uses over half the pack, so the second is refused on the
+reserve — the refusal message explains itself, which is what makes it a good figure.
 
 ---
 
@@ -147,9 +160,9 @@ Everything plotted is measured, not invented.
 
 | Chart | Source |
 |---|---|
-| Battery, temperature, duty states, condition | `tools/report/data/session_telemetry.csv` — a real 610-sample run |
+| Battery, temperature, duty states, condition | `tools/report/data/session_telemetry.csv` — a real 313-sample run, every catalogue product delivered |
 | Payload against energy | `tools/ml/runs.csv` |
-| Acceptance results | `tools/report/data/acceptance_results.json` |
+| Acceptance results | `tools/report/data/acceptance_results.json`, written directly by `scripts/acceptance.py --json` |
 | Delivery accuracy | Distances measured against the simulator during acceptance runs |
 | Test composition | Test counts per suite |
 | ML metrics | Output of `tools/ml/train.py` |
