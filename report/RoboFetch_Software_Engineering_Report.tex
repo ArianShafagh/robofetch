@@ -1,7 +1,5 @@
 \documentclass[12pt,a4paper]{report}
-
 % RoboFetch - Software Engineering Report
-
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{mathpazo}
@@ -24,19 +22,16 @@
 \usepackage{titlesec}
 \usepackage{amsmath}
 \usepackage{amssymb}
-
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{4pt}
 \setlist{itemsep=2pt, topsep=4pt}
 \setlist[enumerate]{leftmargin=1.6em}
 \renewcommand{\arraystretch}{1.25}
-
 \definecolor{codegreen}{rgb}{0.2,0.55,0.2}
 \definecolor{codegray}{rgb}{0.45,0.45,0.45}
 \definecolor{codepurple}{rgb}{0.5,0.0,0.7}
 \definecolor{backcolour}{rgb}{0.97,0.97,0.98}
 \definecolor{framerule}{rgb}{0.78,0.78,0.82}
-
 \hypersetup{
     colorlinks=true,
     linkcolor=black,
@@ -45,7 +40,6 @@
     pdftitle={RoboFetch Software Engineering Report},
     pdfauthor={Arian Shafagh}
 }
-
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\small\itshape RoboFetch}
@@ -54,12 +48,10 @@
 \setlength{\headheight}{15pt}
 \renewcommand{\headrulewidth}{0.4pt}
 \renewcommand{\footrulewidth}{0pt}
-
 \titleformat{\chapter}
   {\normalfont\huge\bfseries}
   {\thechapter}{1em}{}
 \titlespacing*{\chapter}{0pt}{-20pt}{22pt}
-
 \lstdefinestyle{report}{
     backgroundcolor=\color{backcolour},
     commentstyle=\color{codegreen},
@@ -81,10 +73,8 @@
     rulecolor=\color{framerule}
 }
 \lstset{style=report}
-
 % Shorthand for inline code so underscores never need escaping by hand.
 \newcommand{\code}[1]{\texttt{#1}}
-
 % Figure helper, so every figure is inserted the same way.
 \newcommand{\uploadedfigure}[4]{
 \begin{figure}[H]
@@ -94,40 +84,89 @@
     \label{#4}
 \end{figure}
 }
-
+% A screenshot that has not been taken yet renders as a labelled box rather than breaking the
+% build, so the document always compiles and every pending slot is visible in the PDF. Drop the
+% named PNG into Figures/ and it silently becomes a real figure - nothing else to change.
+\newcommand{\screenshotslot}[4]{%
+\begin{figure}[H]
+    \centering
+    \IfFileExists{#1}{\includegraphics[width=#2]{#1}}{%
+      \fbox{\parbox[c][0.26\textheight][c]{#2}{\centering\ttfamily
+      SCREENSHOT PENDING\\[0.6em]\small #1\\[0.6em]\normalfont\itshape #3}}}
+    \caption{#3}
+    \label{#4}
+\end{figure}
+}
 \begin{document}
 
-% ============================================================
+% ============================================================================
 % TITLE PAGE
-% ============================================================
+% ============================================================================
 \begin{titlepage}
 \centering
-\vspace*{2cm}
+\thispagestyle{empty}
 
-{\Huge\bfseries RoboFetch\par}
-\vspace{0.6cm}
-{\LARGE A Simulated Warehouse Pick-and-Delivery Robot\par}
+% University logo. Drop unime-logo.png into Figures/ (or beside this file) and it appears
+% automatically; if the file is missing the page still compiles without it.
+%
+% Both locations are tested on purpose. \graphicspath tells \includegraphics to look in
+% Figures/, but \IfFileExists does NOT consult it - it resolves relative to the directory being
+% compiled. Testing only the bare name would therefore fail for a logo sitting in Figures/, and
+% the page would compile silently without ever showing it.
+\newcommand{\unimelogo}{\includegraphics[width=0.28\textwidth]{unime-logo.png}\par\vspace{1cm}}
+\IfFileExists{Figures/unime-logo.png}{\unimelogo}{%
+  \IfFileExists{unime-logo.png}{\unimelogo}{\vspace{0.5cm}}}
+
+{\scshape\LARGE University of Messina \par}
 \vspace{0.4cm}
-{\large with Machine-Learning Order Admission\par}
+{\scshape\large Department of Engineering \par}   % <-- change to your department
+\vspace{0.3cm}
+{\large Bachelor's Degree in Computer Engineering \par}  % <-- change to your programme
+
+\vspace{2.2cm}
+
+{\rule{\textwidth}{0.6pt}\par}
+\vspace{0.7cm}
+{\huge\bfseries RoboFetch \par}
+\vspace{0.5cm}
+{\Large A Software Engineering Report \par}
+\vspace{0.7cm}
+{\rule{\textwidth}{0.6pt}\par}
 
 \vspace{2.5cm}
-{\large Software Engineering Report\par}
 
-\vspace{3cm}
-{\large\bfseries Arian Shafagh\par}
-\vspace{0.4cm}
-{\large University of Messina\par}
-\vspace{0.2cm}
-{\large Software Engineering\par}
+% ---- Supervisor (left) and Candidate (right) -------------------------------
+\begin{minipage}[t]{0.48\textwidth}
+    \raggedright
+    {\large\bfseries Supervisor\par}
+    \vspace{0.35cm}
+    {\large Prof.\ Salvatore Distefano\par}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.48\textwidth}
+    \raggedleft
+    {\large\bfseries Candidate\par}
+    \vspace{0.35cm}
+    {\large Arian Shafagh\par}
+    {\normalsize Mat.\ XXXXXXX\par}   % <-- your matriculation number, or delete this line
+\end{minipage}
 
 \vfill
+
+{\large Academic Year 2025/2026 \par}   % <-- adjust if needed
+
 \end{titlepage}
 
+% ============================================================================
+% FRONT MATTER
+% ============================================================================
+\pagenumbering{roman}
 \tableofcontents
-\listoffigures
-\listoftables
+\clearpage
+\pagenumbering{arabic}
 
-% ============================================================
+% ============================================================================
+
 \chapter{Introduction}
 % ============================================================
 
@@ -275,13 +314,13 @@ consumption grows with payload mass and distance. Temperature grows with motor l
 decays towards the ambient temperature. Mechanical condition degrades with accumulated energy and
 with time spent above a temperature threshold, and a degraded condition then increases energy
 consumption again. That mutual influence is what makes it a model rather than three independent
-counters. On top of the equations sits a state machine which returns the robot to its station after
+counters. On top of those update rules sits a state machine which returns the robot to its station after
 a period without work, refuses to depart without enough charge to come back, and forces a cooldown
 when the motors overheat.
 
-\emph{Motivation:} there is no library that models this robot. The equations, the coupling between
-them and the operational policy were all specified and implemented in this project, and the
-behaviour is described by a state diagram and a set of difference equations.
+\emph{Motivation:} there is no library that models this robot. The update rules, the coupling
+between them and the operational policy were all specified and implemented in this project, and the
+behaviour is described by a state diagram and a set of step-by-step update rules.
 
 \subsection*{C2 - Order admission and cost preview}
 This is the procedure that converts a request into a decision. It resolves the product to its pick
@@ -429,6 +468,18 @@ FR14 & An administrator shall be able to create, read, update and delete product
 entries. \\
 FR15 & The system shall report aggregate statistics: success rate, mean delivery time, energy per
 delivery and totals. \\
+FR16 & A product that has been delivered shall be removed from stock and shall stop being
+orderable. \\
+FR17 & An accepted order shall reserve its projected energy and peak temperature until it reaches a
+terminal state, and the next decision shall be taken against what would remain. \\
+FR18 & A controller shall be able to queue a return to the station. It shall be costed and reserved
+like any other task, and shall never be refused. \\
+FR19 & A controller shall be able to halt the robot immediately, failing the running order and
+everything queued. The halt shall not persist once it has been carried out. \\
+FR20 & Every page shall require an authenticated session, and the two roles shall differ in what
+they may reach, enforced on the request. \\
+FR21 & An administrator shall be able to read any database table through the application, with
+password hashes, salts and session tokens redacted. \\
 \bottomrule
 \caption{Functional requirements.}
 \label{tab:fr}
@@ -455,36 +506,46 @@ system. \\
 \end{longtable}
 
 \section{Actors and Use Cases}
-The system has two human actors. The \emph{client} places and tracks orders. The
-\emph{administrator} maintains the catalogue and the layout and inspects the condition of the robot
-and the statistics. The navigation stack and the simulator appear as a supporting system actor,
+The system has two human actors, and they correspond exactly to the two roles the login enforces.
+The \emph{controller} places and tracks orders, inspects the condition of the robot, sends it back to
+its station and stops it in an emergency. The \emph{administrator} may do all of that and in addition
+maintains the catalogue and the layout, manages accounts, inspects the statistics and browses the
+database. Requirements written below in terms of a \emph{client} refer to the controller role. The navigation stack and the simulator appear as a supporting system actor,
 because the project treats them as external services rather than as parts it implements.
 
 \uploadedfigure{Figures/01-use-case.png}{0.95\textwidth}
 {Use case diagram. The preview includes the feasibility prediction, and confirming an order
 includes obtaining a preview first, which is why an order can never be placed without a decision
-having been made.}{fig:usecase}
+having been made. The administrator generalises the controller rather than duplicating its arrows,
+because the roles nest: an administrator may do everything a controller may.}{fig:usecase}
 
 \begin{longtable}{@{}p{0.08\textwidth}p{0.28\textwidth}p{0.56\textwidth}@{}}
 \toprule
 \textbf{ID} & \textbf{Use case} & \textbf{Description} \\
 \midrule
 \endhead
-UC1 & Browse product catalogue & The client sees the available products with their weights and
+UC1 & Browse product catalogue & The controller sees the available products with their weights and
 storage locations. \\
-UC2 & Request order preview & The client selects a product and a destination and receives the
+UC2 & Request order preview & The controller selects a product and a destination and receives the
 predicted cost and the decision, without committing to anything. \\
-UC3 & Confirm an order & The client accepts the preview and the order is stored and sent to the
+UC3 & Confirm an order & The controller accepts the preview and the order is stored and sent to the
 robot. \\
-UC4 & View order history & The client sees all orders, their states and their outcomes. \\
+UC4 & View order history & The controller sees all orders, their states and their outcomes. \\
 UC5 & Execute a delivery & The robot performs the pick-and-place sequence and verifies it. \\
-UC6 & Manage products and layout & The administrator changes the catalogue or the warehouse
-description. \\
-UC7 & View robot condition & The administrator inspects battery, temperature, condition and duty
-state. \\
-UC8 & View analytics & The administrator inspects the aggregate statistics. \\
+UC6 & View analytics & The aggregate statistics are reported: success rate, times, energy. \\
+UC7 & View robot condition & Battery, temperature, condition and duty state are inspected. \\
+UC8 & Browse the database & The administrator reads any table, a page at a time, with secrets
+redacted. \\
 UC9 & Predict order feasibility & The system decides whether an order is possible. Always invoked
 as part of a preview, never on its own. \\
+UC10 & Return the robot to its station & The controller queues a trip home. It waits its turn like
+any other task and is never refused. \\
+UC11 & Stop the robot immediately & The controller abandons all work and halts the robot in one
+press, with no confirmation and no latch. \\
+UC12 & Sign in & A visitor authenticates and is granted the reach of their role; an anonymous
+visitor is redirected to the login page. \\
+UC13 & Manage products and layout & The administrator creates, updates and deletes products and
+delivery points. \\
 \bottomrule
 \caption{Use cases.}
 \label{tab:usecases}
@@ -841,7 +902,7 @@ that depends on it, including the training data generator, follows automatically
 \endhead
 Reliability & Bounded retries, a fallback for the prediction service, and physical verification
 before any success is reported. \\
-Testability & Decision logic free of infrastructure dependencies; 65 automated tests that need no
+Testability & Decision logic free of infrastructure dependencies; 16 automated tests that need no
 simulator. \\
 Maintainability & One reason to change per package; configuration held as data. \\
 Observability & Health reporting, continuous telemetry, per-run logs. \\
@@ -884,8 +945,15 @@ room. Pushing the shelves against the walls removes the possibility.
 Parcels are nine-centimetre cubes, deliberately shorter than the height of the lidar, so a carried
 parcel is never mistaken for an obstacle. The consequence is that a delivered parcel is invisible to
 the navigation system. Placing deliveries close together would build a pile of obstacles the robot
-cannot see, so the bays are far apart, and the station is separate from both so the robot never
-parks on something it has delivered.
+cannot see, so the bays are far apart, and the station is offset from both so the robot does not
+park on something it has delivered.
+
+That reasoning is sound for parking but incomplete for driving. The station and both bays sit at the
+same depth in the room, so the route home from either bay runs along the line the other occupies. A
+delivered parcel is below the height of the laser and therefore invisible to the planner, and the
+robot pushes it along rather than avoiding it. This was observed directly and is recorded in
+Chapter~\ref{ch:limitations}; it is a placement problem, not a control problem, and the fix is to
+move the station off that line.
 
 \textbf{The two parcels on each shelf are about a metre apart.} A parcel is carried on the floor
 rather than lifted, so the only thing preventing a carried parcel from knocking into a stored one is
@@ -905,6 +973,14 @@ and detached on command, which binds a parcel rigidly to the gripper link. This 
 and it is the main source of the delivery inaccuracy discussed in Chapter~\ref{ch:limitations}: the
 joint binds the parcel wherever it happens to be lying, which is often some distance off centre, and
 releases it at that same offset.
+
+\screenshotslot{Figures/shot-gazebo-warehouse.png}{0.95\textwidth}
+{The warehouse in the simulator, with all six parcels on their shelves and the robot at its station.
+This is the world every run starts from.}{fig:shotgazebo}
+
+\screenshotslot{Figures/shot-rviz-costmap.png}{0.95\textwidth}
+{The same warehouse as the robot perceives it: the laser scan lying on the walls of the known map,
+and the inflation the planner keeps around every obstacle.}{fig:shotrviz}
 
 \section{The Map}
 The navigation system needs an occupancy map. Rather than producing one by driving the robot around
@@ -968,7 +1044,7 @@ simulator's detachable joint. Its important function is not commanding but verif
 verification is described in Section~\ref{sec:c3}.
 
 \section{The Condition Monitor}
-The condition monitor integrates the equations of the condition model against what the robot is
+The condition monitor integrates the update rules of the condition model against what the robot is
 really doing. It takes distance from the wheel odometry rather than from the commanded velocity,
 which is a deliberate choice: if the robot is stuck against an obstacle the wheels turn but the
 robot does not move, and a model driven by commands would report energy being spent on travel that
@@ -984,30 +1060,96 @@ distinguish ``the model says no'' from ``there is no model''. Those are very dif
 and confusing them would hide a deployment error.
 
 \section{The Web Application}
-The web application serves four pages: the order form, the preview, the order history and the robot
-condition. All are rendered on the server from templates. The two pages that display live values
-refresh themselves using a standard HTML directive rather than JavaScript, which keeps the
-no-JavaScript constraint intact.
+The web application is the control panel for the system. It serves the order form, the preview, the
+order history, the robot condition, a confirmation page for sending the robot home, a login page,
+and three administrator pages: product maintenance, delivery-point maintenance and a read-only
+database browser. All are rendered on the server from templates. The two pages that display live
+values refresh themselves every two seconds using a standard HTML directive rather than JavaScript,
+which keeps the no-JavaScript constraint intact.
+
+The pages show data and controls only. No explanatory text appears on any of them: guidance belongs
+in the documentation, where it can be read once, rather than on a panel an operator looks at many
+times a day. The visual design is deliberately plain for the same reason, and colour is used only
+where it carries meaning.
+
+\subsection*{Access control and roles}
+Every page requires a session, and an anonymous visitor is redirected to the login page with their
+destination remembered. There are two roles. A \emph{controller} may order, track, inspect the robot,
+send it home and stop it. An \emph{administrator} may additionally maintain the catalogue and the
+layout, manage accounts and browse the database. The distinction is enforced on the request, not
+merely hidden in the navigation, so posting directly to an administrator endpoint as a controller is
+refused rather than obeyed.
+
+Passwords are stored as salted hashes using only the standard library, and the cookie holds nothing
+but a random session token, so there is no signing key that could leak. Sessions are cleared on every
+launch; accounts are not.
+
+\screenshotslot{Figures/shot-login.png}{0.72\textwidth}
+{The login page, reached by requesting any page without a session. The destination is remembered, so
+signing in continues to wherever the visitor was going.}{fig:shotlogin}
+
+\subsection*{The emergency stop}
+A single button on every page abandons all work and halts the robot. It has no confirmation step,
+because a stop that asks whether you are sure is not an emergency stop, and it does not latch,
+because a stop that stays engaged after the emergency has passed becomes an obstacle of its own. It
+cancels the navigation goal in flight, brakes, fails the running order and fails everything queued
+behind it. The robot is then immediately available for new work.
+
+The button sits alone at the far right of the header with a wide margin of empty space beside it.
+That spacing is the safeguard against pressing it by accident, chosen deliberately in place of a
+confirmation dialogue that would slow down a real emergency.
+
+\screenshotslot{Figures/shot-estop.png}{0.95\textwidth}
+{The order list immediately after the stop was pressed. The order that was running has been failed
+with the reason, and the work queued behind it has been failed too rather than left to start on its
+own once the robot was released.}{fig:shotestop}
+
+\subsection*{Sending the robot home}
+Returning to the station is offered as a task rather than as a command: it is placed on the same
+queue as deliveries and waits its turn. A separate immediate channel would let an operator interrupt
+a delivery that was already carrying a parcel, which is precisely the situation the release logic
+exists to avoid. The trip is costed and reserved like any other work, because the drive really does
+spend charge, but unlike a delivery it is never refused: admission control exists to stop the robot
+accepting work it cannot finish, and going home is the one job that leaves a struggling robot better
+off. Only one such trip may be outstanding at a time.
+
+\subsection*{Administration and the database browser}
+The administrator pages create, update and delete products and delivery points through the same
+database methods the rest of the system uses. The browser displays every table read-only, a page at a
+time, with password hashes, salts and session tokens redacted.
+
+Table names cannot be supplied as parameters in a query the way values can, so the name of the table
+being viewed is checked against the database's own catalogue of tables before it is used. That check
+is the defence against a crafted table name, and it is one of the behaviours pinned by the automated
+tests.
+
+\screenshotslot{Figures/shot-admin-products.png}{0.95\textwidth}
+{Product maintenance. The catalogue is the record the rest of the system reads, so this page is the
+only place the warehouse contents are defined.}{fig:shotadminproducts}
+
+\screenshotslot{Figures/shot-admin-db.png}{0.95\textwidth}
+{The read-only database browser, showing the user table. Password hashes, salts and session tokens
+are replaced by a marker rather than displayed.}{fig:shotadmindb}
 
 The preview page is the centre of the interface, because it is where the decision is shown to the
 user before anything is committed. It displays the product, the route, the predicted energy and
 time, the battery level the robot would be left with, the peak temperature the job would produce,
 and the decision with its reason.
 
-\uploadedfigure{Figures/shot-order-form.png}{0.95\textwidth}
+\screenshotslot{Figures/shot-order-form.png}{0.95\textwidth}
 {The order form. The client chooses a product and a destination; the catalogue below shows the
 weight and storage location of each product, and no coordinates appear anywhere.}{fig:shotform}
 
-\uploadedfigure{Figures/shot-preview-accepted.png}{0.95\textwidth}
+\screenshotslot{Figures/shot-preview-accepted.png}{0.95\textwidth}
 {An accepted order preview. The predicted route, energy, time, resulting battery level and peak
 motor temperature are shown before the order is committed, and the header reports the robot's
 condition on every page.}{fig:shotaccepted}
 
-\uploadedfigure{Figures/shot-orders-page.png}{0.95\textwidth}
+\screenshotslot{Figures/shot-orders-page.png}{0.95\textwidth}
 {The order history after four deliveries. Each row carries the predicted energy alongside the
 measured result, which is what makes the two comparable afterwards.}{fig:shotorders}
 
-\uploadedfigure{Figures/shot-robot-page.png}{0.95\textwidth}
+\screenshotslot{Figures/shot-robot-page.png}{0.95\textwidth}
 {The robot condition page. The robot's position is deliberately absent: this page answers whether
 the robot is fit to work, not where it is.}{fig:shotrobot}
 
@@ -1058,12 +1200,16 @@ order is possible, and what the robot condition page displays to the operator.
 
 \subsection{Choice of Constants}
 The constants were chosen so that the relationships are observable within a demonstration rather
-than being technically present but invisible. The battery capacity gives roughly four to six
-deliveries per charge; a much larger battery would be more realistic for a real warehouse robot but
-would mean the battery never became a constraint. The heating constant was chosen so that the
+than being technically present but invisible. The battery capacity gives a single delivery of the
+heaviest product per charge, or about three of the lightest; a much larger battery would be more
+realistic for a real warehouse robot but would mean the battery never became a constraint. Measured
+across the whole catalogue from a full charge, the most expensive order leaves the robot at
+thirty-five per cent and the cheapest at seventy-five, so every order in the catalogue is still
+accepted from a full battery and none has been made impossible - the robot simply has to return to
+its station far more often. The heating constant was chosen so that the
 lightest product settles at a temperature safely below the limit while the heaviest settles above
-it, which is what makes payload weight genuinely decide an outcome rather than merely appearing in
-an equation. This is a modelling decision and is stated as such.
+it, which is what makes payload weight genuinely decide an outcome rather than merely appearing as
+an unused input. This is a modelling decision and is stated as such.
 
 Figure~\ref{fig:payloadenergy} shows the resulting relationship between payload and energy per
 metre.
@@ -1073,8 +1219,8 @@ metre.
 {fig:payloadenergy}
 
 \subsection{The Duty Cycle}
-The equations describe how the robot's condition changes. A state machine decides what the robot is
-allowed to do about it.
+The update rules describe how the robot's condition changes. A state machine decides what the robot
+is allowed to do about it.
 
 \uploadedfigure{Figures/04-state-duty-cycle.png}{0.88\textwidth}
 {The duty-cycle state machine. Health states outrank activity: an overheated robot is in cooldown
@@ -1094,10 +1240,22 @@ high and the motors stay cool proves very little; a run in which the battery fal
 reserve and the motors reach their limit is the one that shows whether the model and the policy
 behave correctly under pressure.
 
-The session shown here is one of those runs. Over its course the battery fell from full to roughly
-a third, the motors passed the temperature limit, the robot was forced into cooldown, and it then
-recovered once it had returned to its station. Every one of those events is visible in the figures
-below, and each of them was produced by the system itself rather than staged.
+The session shown here is one of those runs: every product in the catalogue delivered, heaviest
+first and on the longest routes, with orders placed back to back and no idle time allowed. Over its
+course the battery fell from full to twenty-eight per cent across several charge cycles, the motor
+temperature climbed to sixty-seven degrees, and mechanical condition degraded measurably. Every one
+of those events was produced by the system itself rather than staged.
+
+One thing the session does \emph{not} show is worth recording, because it would be easy to present
+the figures as though it did. The motors never reached the temperature limit, and the robot was
+never forced into a cooldown by overheating. That is a direct consequence of the battery size. A
+charge is worth roughly one delivery, so the robot must return to its station and charge between
+jobs, and charging is also when it cools fastest; heat therefore cannot accumulate across
+consecutive deliveries the way it could on a larger battery. The temperature gate is still present,
+still correct and still tested, but on these constants the reserve gate reaches its limit first and
+refuses the work before the motors ever become the binding constraint. The cooldown state does
+appear in the figures, but in its milder form: a robot that is idle and still warm reports itself as
+cooling rather than as ready.
 
 \uploadedfigure{Figures/fig-battery-session.png}{0.95\textwidth}
 {Battery over one session, taken from the run log. The shaded intervals are the periods when the
@@ -1162,6 +1320,11 @@ The ordering in Listing~\ref{lst:admission} is the substance of the design, not 
 detail.
 
 The physical gates run first because they are certain and cheap. They are also the gates whose
+\screenshotslot{Figures/shot-stock-consumed.png}{0.95\textwidth}
+{The order page after a delivery. The delivered product remains visible in the catalogue at zero
+stock, marked as delivered, so its disappearance from the order form is explained rather than
+mysterious.}{fig:shotstock}
+
 refusals a human can act on: ``out of stock'' and ``needs charging'' tell the operator what to do,
 whereas ``the model predicted this would fail'' does not. Running them first means an actionable
 refusal is never masked by a statistical one.
@@ -1178,10 +1341,38 @@ again produced a refusal from the thermal gate, and the page states that the dec
 the safety policy with no model consulted, because the gate refused the order before the classifier
 was ever reached.
 
-\uploadedfigure{Figures/shot-preview-refused.png}{0.95\textwidth}
+\screenshotslot{Figures/shot-preview-refused.png}{0.95\textwidth}
 {A refused order. The predicted peak temperature exceeds the limit, so the thermal gate refuses
 before the classifier is consulted at all - which is exactly the ordering the workflow is designed
 around.}{fig:shotrefused}
+
+\subsection{Work Already Promised}
+A decision taken against the battery the robot reports is a decision about a robot standing still.
+If two orders have already been accepted and are waiting their turn, the charge they will consume is
+spoken for, and judging a third order against the present reading would accept work the robot cannot
+actually reach.
+
+The workflow therefore projects the robot forward before any gate runs. The energy every unfinished
+order is expected to consume is summed, the hottest peak among them is carried across, and the gates
+judge the new order against what would be left afterwards rather than against what is showing now.
+A refusal caused this way says so, naming the number of jobs already in progress, and the preview
+adds a line reporting the charge the order would actually start from - without it the figure
+contradicts the battery shown elsewhere on the page and looks like a fault.
+
+What makes this trustworthy is where the reservation lives. It is not stored as a running total
+alongside the orders; it is derived from the orders table each time it is needed, by summing the ones
+that have not reached a terminal state. An order that completes, fails or is refused therefore
+releases its reservation as a consequence of its status changing, with nothing to remember to undo.
+A stored total would have to be decremented by every path that ends an order, and the first path
+that forgot would leave the robot permanently pessimistic about itself.
+
+\screenshotslot{Figures/shot-preview-reserved.png}{0.95\textwidth}
+{A preview taken while other work is already in progress. The battery the order would start from is
+reported separately from the battery the robot is showing now, and the refusal names the jobs whose
+charge is already spoken for.}{fig:shotreserved}
+
+The projection happens before the first gate in Figure~\ref{fig:activity}, so every gate in that
+diagram judges the same robot.
 
 \subsection{Behaviour When the Model Is Unavailable}
 If the prediction service cannot be reached, the client returns nothing and the workflow proceeds
@@ -1282,8 +1473,13 @@ at the moment it must decide.
 \section{Model and Results}
 The classifier is a random forest inside a pipeline with a feature scaler, so the exported artefact
 is self-contained and the service can hand it raw physical units. On a held-out quarter of the data
-the model reached an accuracy of ninety-six per cent, and five-fold cross-validation on the training
-split gave an F-measure of 0.972.
+the model reached an accuracy of ninety-seven per cent, and five-fold cross-validation on the
+training split gave an F-measure of 0.945.
+
+The training set is not evenly split between the two classes, and deliberately so: with the battery
+sized as it is, roughly a third of the generated orders are feasible and the rest are not. A
+classifier trained on a set where almost everything succeeds learns to say yes, which is worth
+nothing to a workflow whose entire purpose is to be able to say no.
 
 \uploadedfigure{Figures/fig-ml-confusion.png}{0.60\textwidth}
 {Confusion matrix on the held-out test split.}{fig:confusion}
@@ -1291,10 +1487,10 @@ split gave an F-measure of 0.972.
 \uploadedfigure{Figures/fig-ml-importance.png}{0.82\textwidth}
 {Relative importance of the five features.}{fig:importance}
 
-Figure~\ref{fig:importance} shows that the battery level dominates, followed by mechanical
-condition. This is consistent with the physics: the reserve constraint is the tightest of the four,
-and payload and temperature influence the outcome partly through their effect on energy consumption
-rather than only directly.
+Figure~\ref{fig:importance} shows that the battery level dominates, followed by the length of the
+route. This is consistent with the physics: the reserve constraint is the tightest of the four, and
+route length is what converts a healthy battery into an insufficient one. Payload and temperature
+matter less directly, influencing the outcome largely through their effect on energy consumption.
 
 \section{An Honest Statement of What the Model Means}
 The accuracy figures above describe how well the model reproduces the behaviour of the generator
@@ -1331,7 +1527,24 @@ prediction service are replaced by fakes, so the tests remain fast and determini
 verify physical claims against the simulator rather than against status fields.
 
 \section{Automated Test Suites}
-The automated suites contain 65 tests and run in a few seconds.
+The automated suites contain 16 tests and run in a few seconds. One of them - the login gate - is
+applied to each of the eight pages that require a session, so the 16 tests execute as 23 cases.
+
+The suite is deliberately small. It is a representative set rather than an exhaustive one: one test
+per behaviour the system genuinely depends on, each of which can be stated in a sentence and
+defended. A larger suite catches more regressions, and that trade is made consciously here in favour
+of a body of tests that is small enough to be understood in full. Physical behaviour is not covered
+by these at all; it is covered by the acceptance suite, which runs against the live simulator and is
+the larger of the two.
+
+Three of the sixteen are integration tests and need a word of explanation, because they are the only
+part of the suite that is not a plain function call. The application builds its database connection,
+its link to the robot and its client for the prediction service at the moment it is imported. A test
+that wants a throwaway database and no robot must therefore put those substitutes in place and then
+re-import the application, which is what the fixture does: it points the application at a temporary
+database file, replaces the robot link with a stand-in that records what it was asked to publish
+instead of sending it, and reloads the module so those choices take effect. The test then drives the
+application over HTTP exactly as a browser would.
 
 \uploadedfigure{Figures/fig-test-composition.png}{0.88\textwidth}
 {Composition of the automated test suite.}{fig:testcomp}
@@ -1351,44 +1564,44 @@ because a world left over from a previous run would cause failures for the wrong
 \uploadedfigure{Figures/fig-acceptance-results.png}{0.95\textwidth}
 {Results of the acceptance suite against the live system.}{fig:acceptance}
 
-\uploadedfigure{Figures/shot-acceptance.png}{0.97\textwidth}
-{The acceptance suite running against the live system. Each line names the requirement it checks
-and the value it measured.}{fig:shotacceptance}
+The same verification is applied to a single order: the admission verdict and its reasoning are
+recorded, then each state the order passes through, and finally the parcel's real position is read
+back from the simulator and compared with the delivery bay. A delivery is never reported as
+successful on the strength of a status field alone.
 
-The same verification is available for a single order. Figure~\ref{fig:shotorder} shows the helper
-script placing one order and following it: the admission verdict and its reasoning, then each state
-the order passes through, and finally the parcel's real position read back from the simulator and
-compared with the delivery bay.
-
-\uploadedfigure{Figures/shot-order-script.png}{0.97\textwidth}
-{Placing a single order from the command line. The last three lines are the ground-truth check:
-the parcel's real position, the position of the bay, and the distance between them.}{fig:shotorder}
-
-\begin{longtable}{@{}p{0.10\textwidth}p{0.40\textwidth}p{0.44\textwidth}@{}}
+\begin{longtable}{@{}p{0.09\textwidth}p{0.38\textwidth}p{0.47\textwidth}@{}}
 \toprule
 \textbf{Req.} & \textbf{Check} & \textbf{Measured result} \\
 \midrule
 \endhead
-SETUP & System ready and parcels in place & Robot connected, six parcels on their shelves \\
-UC5 & Catalogue and layout served from the database & Six products, two destinations, weights from
-0.3 to 4.5 kg \\
-UC9 & Preview returns a cost and a verdict & 8.6 m, 6.11 Wh, peak 57.5 C, accepted \\
-NFR1 & Preview responds within two seconds & 283 ms \\
-C2 & The classifier is consulted inside the workflow & Decision attributed to the model \\
-NFR3 & Pages render server-side with no JavaScript & All pages returned successfully, no scripts \\
-UC1 & An order can be submitted by product identifier & Accepted, predicted 3.71 Wh \\
-UC2 & An order can be tracked to a terminal state & Completed \\
-UC4 & The parcel is physically delivered & 0.65 m from the bay, moved 2.91 m, confirmed in the
-simulator \\
-FR10 & Condition is tracked & Battery, temperature and condition all reported \\
-FR12 & The run is logged for training & Log file written with the expected schema \\
-FR5 & An unserviceable order is refused with a reason & Refused, ``out of stock'' \\
-FR6 & Orders are served oldest first & The earlier order started first \\
-FR8 & A failing grab is retried three times & Failed after exactly three attempts, robot returned
-to the station \\
-UC6 & Analytics agree with the orders table & Counts matched \\
+SETUP & API up, robot connected, all 6 parcels on their shelves & database=robofetch.db, AI=http://localhost:8001 \\
+UC1 & Catalogue and layout are served from the database & 6 products, 2 destinations, weights [0.3, 0.6, 1.1, 1.8, 3.2, 4.5] \\
+UC12 & An anonymous visitor is sent to the login page & GET /robot while signed out -> 303 (expected 303 redirect) \\
+UC12 & A controller can drive the robot but not administer it & controller: /robot -> 200, /admin -> 403 (expected 200, 403) \\
+UC12 & An administrator reaches the admin section and the database & admin: /admin -> 200, /admin/db?table=products -> 200 \\
+UC13 & An administrator can create, update and delete a product & created=True, updated=Renamed widget @ 2.6 kg, deleted=True \\
+UC9 & Order preview returns a cost and a verdict & 8.6 m, 6.11 Wh, peak 56.8 C -> accepted (by model) \\
+NFR1 & Preview (including the ML call) responds within 2 s & 343 ms \\
+C2 & The classifier is consulted inside the admission workflow & ai\_service={'url': 'http://localhost:8001', 'reachable': True, 'error': None}, decided\_by=model \\
+NFR3 & All pages render server-side with no JavaScript & 8 pages checked: \\
+UC3 & An order can be submitted by product ID & order 1 for SKU-1001, accepted by model, predicted 3.71 Wh \\
+C2 & Work in flight is reserved against the next admission decision & robot reports 100.0\%, next order costed from 56.7\% with 1 order(s) holding 4.76 Wh \\
+UC4 & An order can be tracked to a terminal state & order 1 -> completed: delivered (0.46 m from target) \\
+C2 & The reservation is released when the order finishes & 0 order(s) still reserved after order 1 ended \\
+UC5 & The parcel is physically delivered (Gazebo ground truth) & parcel\_1 at (-2.67, -1.88), 0.46 m from the bay, moved 3.24 m \\
+FR16 & A delivered product is no longer orderable & 5 of 6 products orderable; re-ordering SKU-1001 -> refused ('SKU-1001 is out of stock') \\
+FR10 & Battery, temperature and condition are tracked & battery 74.1\%, temp 44.9 C, condition 99.97\%, state=idle \\
+FR12 & The run is logged to CSV for ML training & run\_20260818\_223755.csv: 41 samples \\
+FR5 & An order the robot cannot serve is refused, with a reason & status=refused, reason='SKU-1002 is out of stock' \\
+FR11 & An idle robot returns to its station and recharges & idle at 74.1\% -> docked and charging, 69.3\% -> 85.0\% \\
+FR6 & Orders are served oldest-first (FIFO) & submitted [4, 5], started [4, 5] - the earlier order ran first \\
+FR8 & A failing grab is retried 3 times, then the order fails & order 6 -> failed after 3 attempts: could not grab parcel\_6 in 3 attempts; returning to station \\
+UC11 & The emergency stop halts the robot (Gazebo ground truth) & robot moved 0.000 m in the 5 s after it settled; listening=True \\
+UC11 & The interrupted order is failed, not left pending & order 7 -> failed: halted by the emergency stop \\
+UC11 & Nothing stays engaged - the robot accepts work immediately after & next order -> accepted: '8.3 m, 3.4 Wh, ~54 s; battery 43\% after returning to the station' \\
+UC6 & Analytics agree with the orders table & reported 3/8 completed and 2 refused; counted 3 and 2; rate=0.5 \\
 \bottomrule
-\caption{Acceptance results, all fifteen checks passing.}
+\caption{Acceptance results, all 26 checks passing against the live simulator.}
 \label{tab:acceptance}
 \end{longtable}
 
@@ -1401,8 +1614,17 @@ with the bay.
 \uploadedfigure{Figures/fig-delivery-accuracy.png}{0.88\textwidth}
 {Measured delivery distances against the acceptance tolerance.}{fig:accuracy}
 
-The measurements cluster between 0.59 and 0.77 metres, comfortably inside the tolerance but far
-from perfect. The cause is discussed in Chapter~\ref{ch:limitations}.
+The measurements cluster between 0.18 and 0.49 metres, with a mean of 0.35, against a tolerance of
+0.7. That tolerance was itself tightened from 1.1 metres once the accuracy improved, because the
+old one no longer discriminated between a good delivery and a poor one.
+
+Earlier in the project these same measurements sat between 0.59 and 0.77 metres, and the cause
+turned out not to be where it appeared to be. The fault was at the moment of the grab rather than
+the moment of release: the robot arrived at the pick point without facing the parcel, the gripper
+accepted a parcel lying anywhere within reach in any direction, and the joint then carried and
+released it at whatever offset it had been seized with. The delivery inherited the error made at
+the shelf. Approaching the pick point facing the shelf, refusing a grab outside a narrow arc, and
+stopping one carry-offset short of the bay together removed most of it.
 
 \subsection{Prediction Quality}
 Because the admission estimate is stored on each order, the predicted route length can be compared
@@ -1417,13 +1639,14 @@ exactly straight.
 
 \subsection{Response Time}
 The order preview, which includes resolving the product, computing the route, simulating the
-condition model forward and calling the prediction service over HTTP, was measured at 283
+condition model forward and calling the prediction service over HTTP, was measured at 343
 milliseconds against a requirement of two seconds.
 
 That figure was originally much worse, and the reason is described in
 Section~\ref{sec:coldstart}: the very first preview after a restart took 1551 milliseconds and the
 prediction timed out entirely. Loading the model when the service starts rather than when the first
-request arrives brought the measurement down to its present value.
+request arrives brought the measurement down to its present value, and the check is now part of the
+acceptance suite so a regression would be caught rather than noticed.
 
 % ============================================================
 \chapter{Development Environment and Engineering Challenges}
@@ -1476,6 +1699,11 @@ The system consists of eight separate processes that have to start in the right 
 another. Doing that by hand is error-prone, so the project provides a single command that stops
 anything left from a previous run, builds the workspace, and launches everything: the simulator, the
 navigation stack, the robot nodes, the web service and the prediction service.
+
+\screenshotslot{Figures/shot-launch.png}{0.95\textwidth}
+{The launch console at the moment the system becomes usable. The line reporting that the robot is
+localized and ready is the trustworthy signal: orders submitted before it appears are accepted and
+never execute.}{fig:shotlaunch}
 
 Testing was carried out in three situations, and each one was necessary.
 
@@ -1580,7 +1808,7 @@ never stopped. It kept the network port occupied, which meant the newly started 
 immediately, while requests to that port were still answered normally by the old process, which was
 connected to a different database and to no robot at all.
 
-Two things were changed. The stop script now matches those services by their full command line, and
+Two things were changed. Shutdown now matches those services by their full command line, and
 the start script refuses to launch if a port is still occupied, naming the process that holds it.
 The web service also gained a health check that reports whether a robot is genuinely listening,
 which turns an invisible failure into a visible one. The same problem recurred later when a second
@@ -1703,17 +1931,47 @@ version are not present in the second, and the parts of the first version that h
 themselves, particularly the environment design and the verification discipline, were carried
 forward unchanged.
 
+A third round of work followed, prompted by using the system rather than by rethinking it. Operating
+it made three absences obvious: there was no way to sign in, so every visitor had the same reach;
+there was no way to stop the robot once it had started; and there was no way to ask it to go home.
+The same period added the reservation of work already accepted, without which the admission decision
+was being taken against a robot that was standing still only on paper. None of these changed the
+shape of the system, which is why they were added to the second version rather than prompting a
+third: each is a page, a queue entry or a database query fitted to machinery that already existed.
+
 % ============================================================
 \chapter{Limitations}
 \label{ch:limitations}
 % ============================================================
 
 
-\textbf{Delivery accuracy is between roughly 0.6 and 0.8 metres.} The dominant cause is the
-simulated gripper. The detachable joint binds the parcel wherever it happens to be lying at the
-moment of the grab, which is often some distance off centre, and releases it at that same offset.
-The parking tolerance of the navigation system is a secondary contributor. A more capable gripper,
-or an alignment step before grabbing, would be the way to improve it.
+\textbf{Delivery accuracy is between roughly 0.2 and 0.5 metres.} The remaining error comes from
+the simulated gripper: the detachable joint binds the parcel wherever it happens to be lying at the
+moment of the grab and releases it at that same offset, so any residual misalignment at the shelf
+is carried to the bay. The parking tolerance of the navigation system is a secondary contributor.
+
+An earlier version of this document listed an alignment step before grabbing as the way to improve
+this. That step has since been implemented - the robot now approaches the pick point facing the
+shelf and the gripper refuses a parcel outside a narrow arc in front of it - and the measured error
+fell from roughly 0.7 metres to roughly 0.35. What is recorded above is what remains after that
+change, not what was there before it.
+
+\textbf{The robot pushes parcels it has already delivered.} The station and both delivery bays lie
+at the same depth in the room, so the drive home crosses the bay line. Parcels are shorter than the
+laser height and so cannot be seen by the planner, and one was observed being pushed more than two
+metres from its bay and left on the charging dock. The delivery itself is verified before the robot
+moves, so no false success is recorded, but the parcel does not stay where it was put. Moving the
+station off that line is the cheapest fix and is not yet done.
+
+\textbf{Only the pages are behind the login; the interface for scripts is not.} The browser pages
+all require a session, but the machine-readable endpoints do not, because the acceptance suite and
+the automated checks use them and this is a single-user simulator on one machine. On a shared network
+those endpoints would need the same check and every script would need a credential.
+
+\textbf{The catalogue is the record of stock, and the simulator is not consulted.} If the catalogue
+says a shelf holds four of something while the simulator holds one, ordering the missing ones simply
+fails after three grab attempts. Synchronising the two was considered and rejected as more machinery
+than a demonstration warrants.
 
 \textbf{The catalogue weight is not the simulated mass of the parcel.} The parcels in the simulator
 are light and have very low friction. That setting is load-bearing: with normal friction a dragged
@@ -1748,26 +2006,39 @@ generator rather than the behaviour of a real robot.
 \textbf{Req.} & \textbf{Where it is satisfied} & \textbf{How it is verified} \\
 \midrule
 \endhead
-FR1 & Product table and its access methods & Unit tests on the catalogue; acceptance check UC5 \\
-FR2 & Layout tables & Unit tests on seeding and spacing; acceptance check UC5 \\
-FR3 & Order endpoint and order form & Integration test; acceptance check UC1 \\
-FR4 & Preview endpoint and preview page & Integration test; acceptance check UC9 \\
-FR5 & Policy gates in the admission workflow & Unit tests per gate; acceptance check FR5 \\
+FR1 & Product table and its access methods & Acceptance check UC1 \\
+FR2 & Layout tables & Acceptance check UC1 \\
+FR3 & Order endpoint and order form & Integration test; acceptance check UC3 \\
+FR4 & Preview endpoint and preview page & Acceptance check UC9 \\
+FR5 & Policy gates in the admission workflow & Unit tests on the stock and reserve gates;
+acceptance check FR5 \\
 FR6 & Oldest-first selection in the task manager & Unit test on ordering; acceptance check FR6 \\
-FR7 & Task manager execution sequence & Acceptance checks UC2 and UC4 \\
+FR7 & Task manager execution sequence & Acceptance checks UC4 and UC5 \\
 FR8 & Bounded retry loop in the task manager & Acceptance check FR8 \\
-FR9 & Verification step against the simulator & Acceptance check UC4 \\
+FR9 & Verification step against the simulator & Acceptance check UC5 \\
 FR10 & Condition monitor and telemetry tables & Unit tests on the model; acceptance check FR10 \\
-FR11 & Idle timer and return-to-station behaviour & Observed in the duty-state record \\
+FR11 & Idle timer and return-to-station behaviour & Acceptance check FR11 \\
 FR12 & Per-run log writer & Acceptance check FR12 \\
-FR13 & Order history page and endpoint & Integration test \\
-FR14 & Catalogue and layout access methods & Unit tests \\
-FR15 & Statistics query & Unit test; acceptance check UC6 \\
-NFR1 & Timeout on the prediction client & Acceptance check NFR1, measured at 283 ms \\
+FR13 & Order history page and endpoint & Acceptance check UC4 \\
+FR14 & Catalogue and layout access methods & Acceptance check UC13 \\
+FR15 & Statistics query & Acceptance check UC6 \\
+FR16 & Stock consumed when an order completes & Unit test on the orderable list; acceptance check
+FR16 \\
+FR17 & Reservation derived from unfinished orders & Acceptance checks C2, both the holding and the
+release \\
+FR18 & Return queued on the same topic as deliveries & Exercised in the duty-state record; never
+refused by construction \\
+FR19 & Non-latching stop handled on the subscription & Acceptance checks UC11, including ground
+truth that the robot did not move \\
+FR20 & Session check on every page, role check on the request & Unit test on the gate across all
+eight pages; acceptance checks UC12 \\
+FR21 & Table name validated against the schema catalogue & Unit tests on the rejection and on
+redaction \\
+NFR1 & Timeout on the prediction client & Acceptance check NFR1, measured at 343 ms \\
 NFR2 & Fallback path in the admission workflow & Unit test with an unreachable service \\
 NFR3 & Server-side templates & Acceptance check NFR3 \\
 NFR4 & One-second publication interval & Telemetry record \\
-NFR5 & Ground-truth comparison & Acceptance check UC4 \\
+NFR5 & Ground-truth comparison & Acceptance check UC5 \\
 NFR6 & Generator and trainer kept outside the build & The running system loads only the exported
 model \\
 \bottomrule
@@ -1812,8 +2083,15 @@ model \\
 \ref{fig:shotrefused} & Screenshot: a refused order preview \\
 \ref{fig:shotorders} & Screenshot: the order history \\
 \ref{fig:shotrobot} & Screenshot: the robot condition page \\
-\ref{fig:shotorder} & Screenshot: placing one order from the command line \\
-\ref{fig:shotacceptance} & Screenshot: the acceptance suite running \\
+\ref{fig:shotlogin} & Screenshot: the login page \\
+\ref{fig:shotestop} & Screenshot: the order list after an emergency stop \\
+\ref{fig:shotadminproducts} & Screenshot: product maintenance \\
+\ref{fig:shotadmindb} & Screenshot: the read-only database browser \\
+\ref{fig:shotreserved} & Screenshot: a preview taken against reserved work \\
+\ref{fig:shotstock} & Screenshot: a delivered product marked out of stock \\
+\ref{fig:shotgazebo} & Screenshot: the warehouse in the simulator \\
+\ref{fig:shotrviz} & Screenshot: the warehouse as the robot perceives it \\
+\ref{fig:shotlaunch} & Screenshot: the launch console when the robot is ready \\
 \bottomrule
 \end{longtable}
 

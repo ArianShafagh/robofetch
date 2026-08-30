@@ -306,7 +306,7 @@ formula and records the decision as made by policy alone.
 ## Testing
 
 ```bash
-# 155 unit + integration tests, no simulator needed, ~2 min
+# 23 test cases from 16 functions, no simulator needed, ~10 s
 source install/setup.bash
 ./robofetch_venv/bin/python -m pytest src/robofetch_core/test/ src/robofetch_bridge/test/ -v
 ```
@@ -315,8 +315,12 @@ source install/setup.bash
 |---|---|
 | `test_robot_model.py` | energy, thermal and wear relationships and their coupling |
 | `test_admission.py` | policy gates, gate ordering, classifier override, AI-down fallback |
-| `test_db.py` | catalogue and layout CRUD, order lifecycle, telemetry, analytics |
-| `test_api_integration.py` | HTTP ↔ SQLite ↔ ROS seams, refusal path, health |
+| `test_db.py` | order ordering, stock consumption, password salting, the browser's injection defence and redaction |
+| `test_auth.py` | the login gate on every protected page, and that the pages carry no advice |
+| `test_api_integration.py` | HTTP ↔ SQLite ↔ ROS seams |
+
+This is a deliberately **small representative set**, not an exhaustive suite — the acceptance
+tests below carry the weight, because they exercise the real robot rather than a fake one.
 
 **Acceptance tests** drive the real system and confirm physical claims against Gazebo:
 

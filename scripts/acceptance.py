@@ -35,11 +35,13 @@ WORLD = "warehouse"
 # short of the bay. Measured across three deliveries: 0.24, 0.31 and 0.49 m - so 0.7 keeps a
 # real margin over the worst of them rather than sitting right on top of it.
 DELIVERY_TOLERANCE = 0.7
-# The pack is deliberately small - about three deliveries - so that admission control has
-# something real to refuse. A suite that runs five deliveries back to back therefore WILL run it
-# flat, and every later check would fail on a refusal that is the system working correctly. So
-# the physical checks wait for the robot to charge first, using the duty cycle rather than
-# faking the battery: it drives home when idle and charges there, exactly as in normal use.
+# The pack is deliberately small - 11 Wh, one heavy delivery or about three light ones - so that
+# admission control has something real to refuse. A suite that runs five deliveries back to back
+# therefore WILL run it flat, and every later check would fail on a refusal that is the system
+# working correctly. So the physical checks wait for the robot to charge first, using the duty
+# cycle rather than faking the battery: it drives home when idle and charges there, exactly as in
+# normal use. CHARGE_RATE is percent-per-second, so a smaller pack costs more recharge CYCLES but
+# not proportionally more wall-clock: each delivery adds roughly half a minute of charging.
 CHARGE_TARGET = 85.0
 
 # The HTML pages are behind a login, so the suite has to sign in. Same defaults the database
@@ -183,7 +185,7 @@ def check_uc5_catalogue_crud():
     _, points = api("/api/delivery-points")
     ok = (len(products) == 6 and len(points) == 2
           and all(p["pick_x"] is not None for p in products))
-    return record("UC5", "catalogue and layout are served from the database", ok,
+    return record("UC1", "catalogue and layout are served from the database", ok,
                   f"{len(products)} products, {len(points)} destinations, "
                   f"weights {sorted(p['weight_kg'] for p in products)}")
 
@@ -215,7 +217,8 @@ def check_uc9_preview():
     _, health = api("/health")
     consulted = health["ai_service"]["reachable"] is True
     return record("C2", "the classifier is consulted inside the admission workflow", consulted,
-                  f"ai_service={health['ai_service']}, decided_by={preview['decided_by']}")
+                  f"prediction service at {health['ai_service']['url']} reachable="
+                  f"{health['ai_service']['reachable']}, decided_by={preview['decided_by']}")
 
 
 def check_uc1_uc2_uc4_delivery():
@@ -223,9 +226,9 @@ def check_uc1_uc2_uc4_delivery():
     status, order = api("/api/orders", "POST",
                         {"product_id": "SKU-1001", "delivery_id": "delivery_1"})
     if status != 201 or order.get("status") == "refused":
-        return record("UC1", "an order can be submitted by product ID", False,
+        return record("UC3", "an order can be submitted by product ID", False,
                       f"HTTP {status}: {order}")
-    record("UC1", "an order can be submitted by product ID", True,
+    record("UC3", "an order can be submitted by product ID", True,
            f"order {order['id']} for SKU-1001, {order['decision']} by {order['decided_by']}, "
            f"predicted {order['estimated_energy_wh']} Wh")
 
@@ -244,7 +247,7 @@ def check_uc1_uc2_uc4_delivery():
            f"{booked.get('reserved_energy_wh')} Wh")
 
     final = wait_for_order(order["id"])
-    record("UC2", "an order can be tracked to a terminal state", final["status"] == "completed",
+    record("UC4", "an order can be tracked to a terminal state", final["status"] == "completed",
            f"order {final['id']} -> {final['status']}: {final['detail']}")
 
     # ... and handed back when the order ends, or the robot would slowly talk itself out of
@@ -259,11 +262,11 @@ def check_uc1_uc2_uc4_delivery():
     _, points = api("/api/delivery-points")
     target = next(d for d in points if d["delivery_id"] == "delivery_1")
     if pose is None:
-        return record("UC4", "the parcel is physically delivered (Gazebo ground truth)",
+        return record("UC5", "the parcel is physically delivered (Gazebo ground truth)",
                       False, "could not read parcel_1's pose")
     gap = math.hypot(pose[0] - target["x"], pose[1] - target["y"])
     moved = math.hypot(pose[0] - SPAWN["parcel_1"][0], pose[1] - SPAWN["parcel_1"][1])
-    return record("UC4", "the parcel is physically delivered (Gazebo ground truth)",
+    return record("UC5", "the parcel is physically delivered (Gazebo ground truth)",
                   final["status"] == "completed" and gap <= DELIVERY_TOLERANCE,
                   f"parcel_1 at ({pose[0]:+.2f}, {pose[1]:+.2f}), {gap:.2f} m from the bay, "
                   f"moved {moved:.2f} m")
@@ -284,7 +287,7 @@ def check_fr3_delivered_is_no_longer_orderable():
                    {"product_id": "SKU-1001", "delivery_id": "delivery_1"})
     refused = bool(order) and order.get("status") == "refused"
 
-    return record("FR3", "a delivered product is no longer orderable",
+    return record("FR16", "a delivered product is no longer orderable",
                   gone and refused and len(everything) == 6,
                   f"{len(available)} of {len(everything)} products orderable; re-ordering "
                   f"SKU-1001 -> {(order or {}).get('status')} "
@@ -380,8 +383,19 @@ def check_fr5_refusal():
                   f"status={(order or {}).get('status')}, reason='{reason}'")
 
 
+# A refusal is NOT a start. An order that admission control turns away never enters the queue at
+# all, so counting it as "no longer pending" would credit the scheduler with running an order it
+# never saw - which is exactly the false FIFO violation this check used to report once the pack
+# shrank to 11 Wh and the second order became refusable.
+NEVER_RAN = ("pending", "refused", "cancelled")
+
+
 def check_fr6_fifo():
     """FR6 - orders are served in the sequence customers placed them, not by proximity."""
+    # Both orders have to be affordable or admission control refuses the second one and there is
+    # no queue left to test the ordering of. The pack is small enough that this matters.
+    wait_for_charge()
+
     _, first = api("/api/orders", "POST",
                    {"product_id": "SKU-3002", "delivery_id": "delivery_2"})
     _, second = api("/api/orders", "POST",
@@ -390,12 +404,22 @@ def check_fr6_fifo():
         return record("FR6", "orders are served oldest-first (FIFO)", False,
                       f"could not queue two orders: {first}, {second}")
 
+    refused = [o["id"] for o in (first, second) if o.get("status") == "refused"]
+    if refused:
+        # Say what actually happened rather than blaming the scheduler: with only one order in
+        # the queue there is no ordering to observe, so this is an inconclusive setup, not a
+        # FIFO violation.
+        return record("FR6", "orders are served oldest-first (FIFO)", False,
+                      f"could not test FIFO: order(s) {refused} were refused at admission "
+                      f"({(second if second['id'] in refused else first).get('decision_reason')})"
+                      " - the queue never held two orders")
+
     started = []
     deadline = time.time() + 600
     while time.time() < deadline and len(started) < 2:
         for order_id in (second["id"], first["id"]):     # poll the LATER one first on purpose
             _, row = api(f"/api/orders/{order_id}")
-            if row and row["status"] != "pending" and order_id not in started:
+            if row and row["status"] not in NEVER_RAN and order_id not in started:
                 started.append(order_id)
         time.sleep(1)
 
@@ -403,9 +427,9 @@ def check_fr6_fifo():
         wait_for_order(order_id)
 
     ok = bool(started) and started[0] == first["id"]
+    order_word = "the earlier order ran first" if ok else "the LATER order ran first"
     return record("FR6", "orders are served oldest-first (FIFO)", ok,
-                  f"submitted [{first['id']}, {second['id']}], started {started} - "
-                  f"the earlier order ran first")
+                  f"submitted [{first['id']}, {second['id']}], started {started} - {order_word}")
 
 
 def check_fr8_retry():
@@ -603,8 +627,20 @@ def check_uc11_emergency_stop():
     # One shot: nothing is engaged afterwards, so the very next order is an ordinary order.
     # Asserted through behaviour rather than through the absence of a column, because that is
     # what the operator experiences and it cannot be fooled by leftover schema.
+    #
+    # The order has to be an ORDINARY one, not the most expensive in the catalogue. This check
+    # ran for a long time against the heaviest product and the furthest bay, which was
+    # affordable on the old battery; on the present one that single order is over half the pack,
+    # so by this point in the suite it is refused on the reserve and the check failed for a
+    # reason that has nothing to do with the emergency stop. Pick the lightest product still in
+    # stock instead: it proves the robot takes work again without also testing the battery.
+    _, catalogue = api("/api/products")
+    orderable = sorted(catalogue or [], key=lambda p: p["weight_kg"])
+    if not orderable:
+        return record("UC11", "nothing stays engaged - the robot accepts work immediately after",
+                      False, "no product left in stock to test with")
     _, resumed = api("/api/orders", "POST",
-                     {"product_id": "SKU-3001", "delivery_id": "delivery_1"})
+                     {"product_id": orderable[0]["product_id"], "delivery_id": "delivery_2"})
     accepted = bool(resumed) and resumed.get("decision") == "accepted"
     record("UC11", "nothing stays engaged - the robot accepts work immediately after",
            accepted,
@@ -638,11 +674,15 @@ def check_nfr3_pages():
         status, body = fetch(admin, path)
         pages[path] = (status, "<script" in (body or "").lower())
     ok = all(status == 200 and not has_script for status, has_script in pages.values())
-    return record("NFR3", "all pages render server-side with no JavaScript", ok,
-                  f"{len(pages)} pages checked: "
-                  + ", ".join(f"{p} -> {s[0]}{' (has <script>!)' if s[1] else ''}"
-                              for p, s in pages.items() if s[0] != 200 or s[1])
-                  or f"{len(pages)} pages all 200, none contain <script>")
+    # Build the problem list first. Inlining it as `"..." + join(...) or "fallback"` reads as
+    # "use the fallback when there is nothing to report", but `+` binds tighter than `or`, so
+    # the left side was the non-empty prefix string and the fallback could never be reached -
+    # the evidence came out as a bare "8 pages checked:" precisely when the check passed.
+    problems = [f"{path} -> {status}{' (has <script>!)' if has_script else ''}"
+                for path, (status, has_script) in pages.items() if status != 200 or has_script]
+    detail = (f"{len(pages)} pages checked, problems: " + ", ".join(problems)) if problems else (
+        f"{len(pages)} pages all returned 200 and none contain a script tag")
+    return record("NFR3", "all pages render server-side with no JavaScript", ok, detail)
 
 
 # ----------------------------------------------------------------------------- main

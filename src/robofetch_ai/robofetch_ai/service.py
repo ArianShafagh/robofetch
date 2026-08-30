@@ -15,6 +15,7 @@ that failure mode obvious and testable rather than theoretical.
     ./robofetch_venv/bin/python -m uvicorn robofetch_ai.service:app --port 8001
 """
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -23,7 +24,23 @@ MODEL_PATH = os.environ.get(
     "ROBOFETCH_MODEL",
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "model.joblib"))
 
-app = FastAPI(title="RoboFetch AI", version="1.0.0")
+# Defined above `app` because FastAPI takes it as a constructor argument; `_load` is defined
+# below and resolved when the server starts, not when this module is imported.
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Load the model when the service starts, NOT on the first request.
+
+    Importing scikit-learn and unpickling the forest takes over a second, which is longer
+    than the caller's timeout. Loading lazily therefore meant the very first prediction after
+    a restart always timed out and silently fell back to the policy-only path - so the first
+    order of every session never got the model, while every later one did. Doing the work at
+    start-up moves that cost to a moment when nobody is waiting.
+    """
+    _load()
+    yield
+
+
+app = FastAPI(title="RoboFetch AI", version="1.0.0", lifespan=lifespan)
 
 _bundle = None
 _load_error = None
@@ -44,19 +61,6 @@ def _load():
         _bundle = joblib.load(MODEL_PATH)
     except Exception as exc:                                       # noqa: BLE001
         _load_error = str(exc)
-
-
-@app.on_event("startup")
-async def _warm_up():
-    """Load the model when the service starts, NOT on the first request.
-
-    Importing scikit-learn and unpickling the forest takes over a second, which is longer
-    than the caller's timeout. Loading lazily therefore meant the very first prediction after
-    a restart always timed out and silently fell back to the policy-only path - so the first
-    order of every session never got the model, while every later one did. Doing the work at
-    start-up moves that cost to a moment when nobody is waiting.
-    """
-    _load()
 
 
 class Features(BaseModel):

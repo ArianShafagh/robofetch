@@ -31,3 +31,7 @@ tools/report/plantuml.jar
 
 # Report archives you zip for Overleaf - rebuild with: zip -r report.zip report/
 report*.zip
+
+# Windows alternate-data-stream metadata, created every time a file crosses the WSL boundary
+# (screenshots, mostly). Never content.
+*:Zone.Identifier
