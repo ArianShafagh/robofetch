@@ -1519,9 +1519,10 @@ Testing is organised in three layers, in increasing order of realism and decreas
 They require no simulator and no network.
 
 \textbf{Integration tests} exercise the joins between components: an HTTP request producing a
-database row and a message to the robot, a status message from the robot updating an order and
-recording history, telemetry updating the stored condition. The robotic middleware and the
-prediction service are replaced by fakes, so the tests remain fast and deterministic.
+database row and a message to the robot, with the product resolved to its simulator model and its
+pick and delivery coordinates so the robot side never needs the catalogue; and the login gate
+applied to every page that requires a session. The robotic middleware and the prediction service
+are replaced by fakes, so the tests remain fast and deterministic.
 
 \textbf{Acceptance tests} run against the complete live system with the simulator running, and
 verify physical claims against the simulator rather than against status fields.

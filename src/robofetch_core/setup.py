@@ -14,7 +14,7 @@ setup(
     zip_safe=True,
     maintainer="robojazzy",
     maintainer_email="shafagh.arian2003@gmail.com",
-    description="RoboFetch custom logic: gripper, task manager, scheduler, retry FSM.",
+    description="RoboFetch custom logic: robot condition model, task manager, gripper.",
     license="MIT",
     tests_require=["pytest"],
     entry_points={
