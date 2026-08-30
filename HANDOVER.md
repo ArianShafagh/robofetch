@@ -3,7 +3,7 @@
 Complete state of the project: what exists, how to run it, every problem hit and how it was
 solved, and what remains. Written so a fresh session (or a new person) can pick it up cold.
 
-**Last updated:** 2026-08-18 · **Status:** v2 + all requested work · **155 tests + 26/26 acceptance checks passing** · **COMMITTED**
+**Last updated:** 2026-08-25 · **Status:** v2 + all requested work · **23 tests + 26/26 acceptance checks passing** · **COMMITTED**
 
 ## 0. START HERE — state of play and what to do next
 
@@ -11,24 +11,30 @@ Everything below this section is reference. This section is the working state.
 
 ### Where the project stands
 
-The system works end to end and is verified: **155 pytest tests** and **26/26 acceptance checks**
-against the live simulator, with every physical claim confirmed against Gazebo rather than against
-log messages.
+The system works end to end and is verified: **23 pytest cases** (16 test functions, one
+parameterised over the eight gated pages) and **26/26 acceptance checks** against the live
+simulator, with every physical claim confirmed against Gazebo rather than against log messages.
 
-> ### The v2 work IS committed now
+> ### Everything is committed and merged to `main`
 >
-> Everything described in this section landed in `c920723` on `main` - the ~30-file backlog this
-> banner used to warn about is gone. The `on_event` -> `lifespan` migration that followed is in
-> `3c55716` on branch `chore/lifespan-migration`, not yet merged. **Still read `git status`
-> before changing anything**, but do not expect a mountain of uncommitted work.
+> A previous session left a day's work uncommitted while this banner claimed the opposite: the
+> banner commit landed at 17:43 on 2026-08-18 and was accurate for twelve minutes, after which
+> the battery capacity was halved, the test suite was trimmed, the report figures were rebuilt
+> and `INSTALL.md` was written — none of it recorded. That backlog has now been verified and
+> landed, and `chore/lifespan-migration` is merged.
+>
+> **The lesson, not the state:** a "what is committed" claim in this file goes stale the moment
+> the next edit lands. Trust `git status`, never this paragraph.
 >
 > `git@github.com:ArianShafagh/robofetch.git`, branch `main`.
 
 The **written report** is `report/RoboFetch_Software_Engineering_Report.tex`, about 1820 lines,
 15 chapters and 2 appendices, with 33 figures. It has **never been compiled** — LaTeX is not
-installed here; it targets Overleaf. See `report/README.md`. It is now **out of date** in three
-ways: the 7 UI screenshots predate the plain redesign and the login page, the acceptance figure
-should be 26/26, and the delivery-accuracy figure should be ~0.25-0.5 m rather than 0.6-0.8 m.
+installed here; it targets Overleaf. See `report/README.md`. The three staleness items this
+paragraph used to list are **done**: the UI screenshots have been retaken against the plain
+redesign and the login page (12 new ones, including the e-stop and both admin pages), the
+acceptance figure reads 26/26, and delivery accuracy is plotted at 0.18-0.49 m. All 40 figures
+the `.tex` references exist on disk, so nothing renders as a `SCREENSHOT PENDING` box.
 
 ### What to do FIRST in a new session
 
@@ -36,7 +42,6 @@ should be 26/26, and the delivery-accuracy figure should be ~0.25-0.5 m rather t
 2. `git status` — should be clean or nearly so; see the banner above.
 3. `./scripts/stop.sh --check` before launching anything (see §5.12; one stale process breaks
    every later launch).
-4. Merge or rebase `chore/lifespan-migration` if it is still outstanding.
 
 ### The owner's working style — read this, it saves rework
 
@@ -57,11 +62,22 @@ should be 26/26, and the delivery-accuracy figure should be ~0.25-0.5 m rather t
 
 **1. Battery drains faster, and accepted orders RESERVE their cost. — DONE**
 
-*(a)* `CAPACITY_WH` in `robot_model.py` is now `22.0` (was `40.0`): about three deliveries per
-charge instead of six. Because the ML training label depends on how much of the pack an order
-consumes, `tools/ml/generate.py` and `tools/ml/train.py` were re-run — the current
-`model.joblib` is trained against the 22 Wh pack (F1 0.96; battery is now the dominant feature
-at 0.68 importance). **If you ever change `CAPACITY_WH` again, you must regenerate and retrain.**
+*(a)* `CAPACITY_WH` in `robot_model.py` is now `11.0` — it went `40.0` -> `22.0` -> `11.0`, the
+last step on 2026-08-18. A charge is now worth **one heavy delivery, or about three of the
+lightest**. Measured from a full battery, counting the drive home as well as the outbound leg
+(which is what `RESERVE_PERCENT` is judged against): the heaviest order, `SKU-3001` to
+`delivery_1`, costs 6.13 Wh and leaves **34.8%**; the lightest, `SKU-3002` to `delivery_2`, costs
+1.85 Wh and leaves **74.9%**. All twelve product/bay combinations are still accepted from full,
+so nothing became unorderable — the robot simply recharges far more often.
+
+Because the ML training label depends on how much of the pack an order consumes,
+`tools/ml/generate.py` and `tools/ml/train.py` were re-run; `model.joblib` is trained against the
+11 Wh pack. **If you ever change `CAPACITY_WH` again, you must regenerate and retrain.**
+
+If you need to confirm which capacity a given `model.joblib` was built for, do not trust file
+timestamps — back-solve `tools/ml/runs.csv` instead. Each row's battery drop covers the outbound
+`energy_wh` plus an unloaded return leg that `generate.py` samples from 2.5-3.5 m, so only the
+correct capacity puts that implied return distance inside the range.
 
 *(b)* The reservation ledger is in. `orders` gained `estimated_return_energy_wh` and
 `estimated_peak_c`; `Database.committed_load()` sums energy and takes the maximum peak
@@ -228,17 +244,13 @@ Full detail, plus two approaches that FAILED and must not be retried, in §5.11b
 
 ### STILL OPEN — pick these up next
 
-1. **Merge `chore/lifespan-migration`.** The FastAPI `on_event` -> `lifespan` migration
-   (`3c55716`); the v2 backlog itself is already committed as `c920723`.
-2. **The robot bulldozes parcels it has already delivered** — see immediately below. Not fixed;
+1. **The robot bulldozes parcels it has already delivered** — see immediately below. Not fixed;
    three candidate fixes listed, all of which change the warehouse layout figure in the report.
-3. **`/clock` runs at ~500 Hz and dominates CPU** (§5.13). Not needed for correctness — the suite
+2. **`/clock` runs at ~500 Hz and dominates CPU** (§5.13). Not needed for correctness — the suite
    passes 26/26 headless. It matters only for making the **GUI/RViz** run comfortable, which is
    the owner's remaining pain point. Three levers listed, none tested; one experiment already
    produced a failed launch and was reverted.
-4. **The report is stale**: 7 UI screenshots predate the redesign and the login page, the
-   acceptance figure should be 26/26, and delivery accuracy is now ~0.25-0.5 m not 0.6-0.8 m.
-5. **Multi-item stock is deliberately NOT implemented.** The owner decided the catalogue is the
+3. **Multi-item stock is deliberately NOT implemented.** The owner decided the catalogue is the
    system of record and the simulator is only a demo: if the database says a shelf holds four of
    something and Gazebo has one, ordering the missing ones simply fails after three grab attempts,
    and that is acceptable. Do not build Gazebo-to-database syncing; it was considered and rejected
@@ -309,13 +321,16 @@ The owner's standing preferences are in §9. The ones that matter most:
 
 ### Quick verification after any change
 
+The acceptance suite shells out to `gz`, so **source ROS in the shell you run it from** or every
+parcel reports "no pose from Gazebo" and it blames the world instead of the shell (see §4).
+
 ```bash
-cd ~/robofetch_ws && source install/setup.bash
-./robofetch_venv/bin/python -m pytest src/robofetch_core/test/ src/robofetch_bridge/test/ -q   # 155
+cd ~/robofetch_ws && source /opt/ros/jazzy/setup.bash && source install/setup.bash
+./robofetch_venv/bin/python -m pytest src/robofetch_core/test/ src/robofetch_bridge/test/ -q   # 23
 ./scripts/stop.sh && ./scripts/run.sh --headless        # wait for "Localized and ready"
 ./scripts/order.sh SKU-3001 delivery_1                  # ends with VERIFIED or NOT DELIVERED
 ./robofetch_venv/bin/python scripts/acceptance.py       # 26/26, needs a fresh world
-                                                        # allow ~25 min: it waits for recharges
+                                                        # ~12 min: it waits for recharges
 ```
 
 ---
@@ -518,15 +533,26 @@ The REST API is still there for scripts: `POST /api/preview`, `POST /api/orders`
 cd ~/robofetch_ws && source install/setup.bash
 ./robofetch_venv/bin/python -m pytest src/robofetch_core/test/ src/robofetch_bridge/test/ -v
 ```
-**155 passing:** condition model, admission policy (including the reservation ledger), database
-(reservations, stock, session reset), and HTTP↔SQLite↔ROS integration.
+**23 cases passing** from 16 test functions — the gate test is parameterised over the eight
+gated pages. Covers the condition model, admission policy (including the reservation ledger), the
+database (stock, session reset, the browser's injection defence and redaction), and
+HTTP↔SQLite↔ROS integration.
+
+The suite is deliberately a **small representative set**, not exhaustive: it was trimmed from 138
+functions on 2026-08-18 so the live acceptance suite carries the weight instead. That is why the
+test pyramid in the report is inverted — the physical layer is the widest tier.
 
 Acceptance, against the live simulator (needs a freshly launched stack):
 
 ```bash
 ./robofetch_venv/bin/python scripts/acceptance.py          # --quick skips the slow physical ones
 ```
-**26/26 passing** as of 2026-08-18.
+**26/26 passing.**
+
+The check IDs were renumbered on 2026-08-18 to match the requirement numbering used in the report:
+`UC5`->`UC1`, `UC1`->`UC3`, `UC2`->`UC4`, `UC4`->`UC5`, `FR3`->`FR16`. Same checks, same
+assertions — only the labels moved, so an old log compared against a new one will look like
+checks changed when they did not.
 
 ### ⚠️ Verify with Gazebo, never with logs alone
 
@@ -536,6 +562,21 @@ gz topic -e -t /world/warehouse/dynamic_pose/info -n 1 | grep -A6 'name: "item_'
 ```
 This matters — see §5.4. The same command with `name: "robofetch"` gives the robot's true pose, which
 is the only way to catch AMCL drifting (see §5.5).
+
+**Run the acceptance suite from a shell that has sourced ROS**, or it fails for the wrong reason.
+`scripts/acceptance.py` shells out to `gz topic`, which inherits your environment. The `gz` binary
+is on `PATH` without sourcing anything, but its **subcommands** are not: without `GZ_CONFIG_PATH`
+it prints *"I cannot find any available 'gz' command"* and **exits 0**. The suite reads that empty
+output as no pose, and the SETUP check reports:
+
+```
+FAIL  SETUP    parcels are on their shelves (fresh world)
+      parcel_1: no pose from Gazebo; ... - restart with ./scripts/stop.sh && ./scripts/run.sh
+```
+
+which accuses the world of being dirty when the world is perfectly fine and the *shell* is wrong.
+The tell is that **all six** parcels report no pose at once - a genuinely stale world has moved
+one or two, never all six. Confirm with `echo $GZ_CONFIG_PATH` before believing the message.
 
 **Do not use `/amcl_pose` as a readiness check.** Its publisher is `TRANSIENT_LOCAL` (latched), so
 `ros2 topic echo /amcl_pose --once` returns the last stored message *instantly and forever* — even
@@ -859,7 +900,7 @@ Measure it with `/proc/<pid>/stat` deltas, **not** `top`: `top -b`'s first itera
 lifetime averages, so mixing its output blocks gives numbers that are wrong by an order of
 magnitude. That mistake was made once already during this investigation.
 
-Two levers exist, **neither tested, both reverted after a failed launch**:
+Three levers exist, **none tested, and one was reverted after a failed launch**:
 
 - `use_sim_time: False` on `gripper_node` and `robot_state_node`. Both use `time.time()` and
   `time.sleep()` and read no ROS time at all, so they gain nothing from `/clock`. `task_manager`
@@ -872,8 +913,81 @@ Two levers exist, **neither tested, both reverted after a failed launch**:
   but the parcel physics in §5.5 were tuned at 1 ms and a coarser step may change grab and drag
   behaviour. Needs a real delivery run to confirm.
 
+**It is no longer only a GUI problem — on 2026-08-25 it blocked a HEADLESS launch.** Running
+`./scripts/run.sh --headless` immediately after its own `colcon build`, the navigation stack never
+came up. The tell is one line, and it is easy to read as the opposite of what it means:
+
+```
+[controller_server.rclcpp]: failed to send response to /controller_server/change_state
+    (timeout): client will not receive response
+```
+
+`controller_server` **configured successfully** - `Configured MPPI Controller: FollowPath` is
+right above it - but its reply to `lifecycle_manager`'s `change_state` call timed out in transit,
+so the manager never learned it had succeeded and sat on `Configuring controller_server` for ever.
+Downstream, AMCL repeated `cannot publish a pose` and the task manager stayed at
+`waiting for Nav2 and gripper`, which looks exactly like the §5.12 orphan symptom - except
+`stop.sh --check` was clean, and this had a different cause.
+
+Measured at that moment, with everything idle: `ruby` 199%, `gripper_node` 123%, `task_manager`
+120%, `parameter_bridge` 63%, `robot_state_node` 61%. About **570% consumed before Nav2 asked for
+any**, on a machine whose load average was **13.00 on 12 cores** because `run.sh` had just built
+the workspace.
+
+**The fix needed no code.** Stop, wait for the load average to fall below ~2.5, and relaunch with
+`--no-build`; it localized in about 40 seconds. So if a headless launch wedges at
+`Configuring controller_server`, check `/proc/loadavg` before suspecting anything else - and
+prefer building as a separate step from launching:
+
+```bash
+./scripts/stop.sh && colcon build --symlink-install     # build first, on its own
+until [ "$(awk '{print ($1 < 2.5)}' /proc/loadavg)" = 1 ]; do sleep 10; done
+./scripts/run.sh --headless --no-build                  # then launch onto a quiet machine
+```
+
+This is the strongest argument yet for actually testing the three levers listed above: the idle
+`/clock` cost is what leaves no headroom for the lifecycle handshake.
+
 None of this is required for the system to work: the acceptance suite passes 26/26 headless. It
-matters only for making the **GUI/RViz** run comfortable.
+matters for making the **GUI/RViz** run comfortable, and - as above - for launching reliably on a
+busy machine.
+
+### 5.14 A refused order is not a served order — the FR6 FIFO check counted it as one
+
+Found on 2026-08-25, immediately after `CAPACITY_WH` dropped to 11. The acceptance suite reported
+
+```
+FAIL  FR6      orders are served oldest-first (FIFO)
+      submitted [4, 5], started [5, 4] - the earlier order ran first
+```
+
+The message contradicts itself, which is the first clue that the **check** was wrong rather than
+the scheduler. Ground truth from the API: order 4 `completed`, *"delivered (0.29 m from target)"*;
+order 5 `refused`, *"predicted infeasible in the robot's current condition (confidence 54%)"*.
+
+Order 5 **never entered the queue**, so there was never an ordering to violate. `check_fr6_fifo`
+counted an order as started once its status was `!= "pending"`, and `refused` satisfies that. It
+also polls the later order first on purpose, so the refusal landed at the head of `started` and
+the comparison failed.
+
+**Why the smaller battery exposed it.** The two orders are submitted 0.2 s apart. At 22 Wh the
+second was affordable against the first one's reservation and sat at `pending` as intended. At
+11 Wh it is refused instead - correct behaviour from admission control, and the reason the check
+had never failed before.
+
+**Fixed** by making the check say what actually happened:
+
+- `NEVER_RAN = ("pending", "refused", "cancelled")` - a start means the order really began
+  executing, not merely that it stopped being pending;
+- a refusal now reports *"could not test FIFO: order(s) [5] were refused at admission ... - the
+  queue never held two orders"*, which is an inconclusive setup rather than a scheduler fault;
+- `wait_for_charge()` runs first so both orders are affordable and the check has a real queue;
+- the evidence string no longer prints *"the earlier order ran first"* when it just failed.
+
+**The general lesson**, and the reason this sits beside §5.4 and §5.10: a check that asks
+"is this no longer in state X?" is not asking "did the thing I care about happen?". Both earlier
+bugs had the same shape - a test that passes when nothing happened at all. This one was the
+mirror image, failing when nothing had gone wrong.
 
 ### 5.11 v2 traps worth knowing
 
@@ -916,8 +1030,8 @@ raises at request time, not at import, so the app starts happily and then fails 
 `orders` table in place with the wrong columns. Delete `robofetch.db` when moving to v2 — it is
 runtime state and is recreated with the seeded catalogue on first run.
 
-**Constants were retuned so the demo has something to refuse.** `CAPACITY_WH` is 22 (about three
-deliveries per charge) and `K_HEAT` is 1.2, which puts the lightest product's steady-state
+**Constants were retuned so the demo has something to refuse.** `CAPACITY_WH` is 11 (one heavy
+delivery per charge; see §0) and `K_HEAT` is 1.2, which puts the lightest product's steady-state
 temperature around 65 C and the heaviest around 74 C — straddling the 70 C limit. That is what
 makes payload weight actually decide an outcome. A bigger battery or gentler heating is more
 realistic but leaves the accept/refuse logic with nothing to bite on.
@@ -977,9 +1091,16 @@ three in one request — a stale API answers with `robot_connected: false` and t
 
 ## 7. Known limitations (be honest about these in the report)
 
-**Delivery accuracy is ~0.7 m.** The dominant error is that `DetachableJoint` welds the parcel
+> **RESOLVED — read §5.11b.** The two limitations immediately below were fixed after this section
+> was written, and the record is kept because the *failed* attempts under each are exactly the
+> "do not retry this" history the document exists for. Delivery accuracy is now **0.18-0.49 m**,
+> and the grab check is authoritative.
+
+**~~Delivery accuracy is ~0.7 m.~~** The dominant error was that `DetachableJoint` welds the parcel
 wherever it lies at grab time (often ~0.5 m off-centre) and releases it at that same offset. Nav2's
-0.25 m parking is secondary.
+0.25 m parking is secondary. **Fixed in §5.11b** by facing the parcel at grab time
+(`TaskManager.approach`), refusing off-axis grabs, and stopping one `carry_offset` short of the
+bay — the four failed attempts below predate that fix.
 
 **Four attempts to improve it all FAILED and were reverted** (2026-08-04). Do not retry these
 without changing what made them fail:
@@ -998,7 +1119,9 @@ without changing what made them fail:
 so the parcel is always taken centred; or **run headless with full-strength MPPI** so tighter parking
 becomes achievable.
 
-**The grab check cannot tell "attached" from "nothing happened"** (found 2026-08-05). `gripper_node.
+**~~The grab check cannot tell "attached" from "nothing happened"~~** (found 2026-08-05,
+**fixed in §5.10** by subscribing to the DetachableJoint's `<output_topic>`, exactly as the last
+paragraph of this entry proposed). `gripper_node.
 on_grab` measures the item-to-robot gap, publishes attach, sleeps, and measures the gap again —
 accepting the grab if it is still within `hold_tolerance` (0.85 m). If the attach silently does
 nothing, neither body moves, so `gap_after == gap_before` and the check **passes trivially**. This is
