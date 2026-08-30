@@ -13,6 +13,8 @@ sources in report/uml/.
 """
 import csv
 import json
+
+import make_results_table
 import pathlib
 
 import matplotlib
@@ -517,6 +519,10 @@ def main():
     fig_layered_architecture()
     fig_dependency_direction()
     fig_waterfall()
+
+    # The acceptance table is generated from the same JSON as fig_acceptance_results, and is
+    # refreshed here so the figure and the table beside it can never describe different runs.
+    make_results_table.main()
     print("done")
 
 
