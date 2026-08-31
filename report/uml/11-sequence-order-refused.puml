@@ -1,0 +1,45 @@
+' =====================================================================
+' RoboFetch - Scenario 2 of 3: an order is REFUSED because the robot
+' does not have the battery to finish it. Nothing is stored and the
+' robot is never sent, so the refusal costs nothing but a preview.
+' The reason string is the one the system really produces.
+' =====================================================================
+@startuml
+skinparam backgroundColor White
+skinparam shadowing false
+skinparam sequence {
+  ArrowColor #34495E
+  LifeLineBorderColor #7F8C8D
+  ParticipantBorderColor #34495E
+  ParticipantBackgroundColor #FBFCFE
+  LifeLineBackgroundColor #EAF2FA
+}
+
+title Scenario 2: an order is refused on the robot's condition
+
+actor Controller as C
+participant "Web tier" as API
+database "SQLite" as DB
+participant "AI service" as AI
+participant "Task manager" as TM
+
+== Cost the job ==
+C -> API ++ : POST /preview  SKU-3001 -> delivery_1
+API -> DB ++ : product, pick point, bay
+DB --> API -- : 4.5 kg, route 8.6 m including the way home
+API -> DB ++ : live robot condition
+DB --> API -- : battery 18%, 41 C, condition 99%
+API -> API : roll the state forward past work\nalready accepted but not yet done
+
+== Ask the model, then decide ==
+API -> AI ++ : predict  battery 18%, 4.5 kg, 8.6 m
+AI --> API -- : infeasible, confidence 54%
+API -> API : apply policy gates:\nstock, reserve, thermal, condition
+API --> C -- : REFUSED\n"predicted infeasible in the robot's\ncurrent condition (confidence 54%)"
+
+note over API, TM
+  Nothing is written to the orders table and nothing is published to the
+  task manager. The robot is never sent, so a refusal costs one preview.
+end note
+
+@enduml

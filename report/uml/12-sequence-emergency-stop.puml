@@ -1,0 +1,56 @@
+' =====================================================================
+' RoboFetch - Scenario 3 of 3: the controller stops the robot while an
+' order is running. The stop is handled on the SUBSCRIPTION CALLBACK,
+' because the worker thread is blocked waiting on a navigation result
+' at exactly the moment the button is pressed. It does not latch.
+' =====================================================================
+@startuml
+skinparam backgroundColor White
+skinparam shadowing false
+skinparam sequence {
+  ArrowColor #34495E
+  LifeLineBorderColor #7F8C8D
+  ParticipantBorderColor #34495E
+  ParticipantBackgroundColor #FBFCFE
+  LifeLineBackgroundColor #EAF2FA
+}
+
+title Scenario 3: the emergency stop halts a running order
+
+actor Controller as C
+participant "Web tier" as API
+database "SQLite" as DB
+participant "Task manager\n(callback)" as CB
+participant "Task manager\n(worker)" as TM
+participant "Nav2" as NAV
+participant "Gazebo" as GZ
+
+TM -> NAV ++ : navigate to delivery_1
+activate TM
+note over TM : the worker is now BLOCKED\nwaiting on this result
+
+== The button is pressed ==
+C -> API ++ : POST /estop
+API -> CB ++ : publish /robot/estop
+API --> C -- : stopped
+CB -> NAV : cancel the in-flight goal
+NAV --> TM -- : CANCELED
+deactivate TM
+CB -> GZ : /cmd_vel zero, brake
+CB -> API ++ : order 4 FAILED\n"halted by the emergency stop"
+CB -> API : queued orders FAILED, with a reason
+API -> DB : update orders
+API --> CB --
+deactivate CB
+
+== It does not latch ==
+C -> API ++ : POST /orders  the next order
+API --> C -- : accepted, ordinary order
+
+note over CB, GZ
+  Nothing is written to the database by the stop itself, so nothing
+  survives a logout. The robot stands where it stopped; going home
+  afterwards is a separate, deliberate press.
+end note
+
+@enduml

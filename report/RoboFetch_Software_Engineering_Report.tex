@@ -820,6 +820,16 @@ relationship, so the diagram shows both what is stored and how the tables relate
 {The database schema. Primary keys are marked, foreign keys link the tables, and the cardinality
 of each relationship is shown on the connectors.}{fig:er}
 
+The same schema is given again in Figure~\ref{fig:dbclass} as a UML class diagram, with each table
+as a class carrying the \texttt{<<table>>} stereotype and each column its SQL type. The two views
+answer different questions: the entity-relationship diagram shows how the tables relate, while the
+class diagram shows precisely what each one stores, which is the form needed when reading the
+schema against the code that creates it.
+
+\uploadedfigure{Figures/07-database-class.png}{0.95\textwidth}
+{The database schema as a UML class diagram. Each table is a class with the table stereotype;
+columns carry their SQL types, and primary and foreign keys are marked.}{fig:dbclass}
+
 The schema contains nine tables in three groups. The layout group describes the warehouse:
 \code{shelves}, \code{pick\_points}, \code{delivery\_points} and \code{station}. The catalogue and
 order group contains \code{products}, \code{orders} and \code{delivery\_history}. The condition
@@ -1228,12 +1238,29 @@ obligation is that the map must be regenerated whenever the geometry changes.
 
 \section{Overview}
 This chapter describes how the components are implemented, following the layers from the bottom
-upwards. Figure~\ref{fig:sequence} shows how they cooperate to serve one order, from the client's
-first request through to the verification of the delivery.
+upwards. Three sequence diagrams show how they cooperate, one scenario each, because a single
+diagram carrying every branch is harder to read than three that each follow one path to its end.
+Figure~\ref{fig:seqsuccess} is the normal case; Figure~\ref{fig:seqrefused} is an order the system
+declines to accept; Figure~\ref{fig:seqestop} is a running order halted by the operator. Together
+they cover the three outcomes an order can have: it is delivered, it is never started, or it is
+stopped.
 
-\uploadedfigure{Figures/03-sequence-order.png}{0.98\textwidth}
-{Sequence diagram of a complete order. Note that the decision is taken before anything is stored,
-and that the outcome is decided by reading the parcel's real position.}{fig:sequence}
+\uploadedfigure{Figures/03-sequence-order-success.png}{0.98\textwidth}
+{Scenario 1: a controller places an order and it is delivered. The decision is taken before
+anything is stored, and the outcome is decided by reading the parcel's real position rather than by
+the fact that every command returned success. The figures are those of order 1 of the recorded
+acceptance run.}{fig:seqsuccess}
+
+\uploadedfigure{Figures/11-sequence-order-refused.png}{0.92\textwidth}
+{Scenario 2: the same request is refused because the robot has not the battery to finish it and
+return. The classifier is consulted, but the policy gates decide; nothing is written to the orders
+table and the robot is never sent, so a refusal costs one preview.}{fig:seqrefused}
+
+\uploadedfigure{Figures/12-sequence-emergency-stop.png}{0.95\textwidth}
+{Scenario 3: the operator halts a running order. The stop is handled on the subscription callback
+rather than on the worker thread, because the worker is blocked waiting on a navigation result at
+exactly the moment the button is pressed. Nothing is written by the stop itself, so it does not
+survive a logout and the next order is an ordinary one.}{fig:seqestop}
 
 \section{The Database Layer}
 The database layer is a single class that owns the schema and exposes domain operations. On first
@@ -2395,11 +2422,14 @@ tree imports the training package \\
 \ref{fig:usecase} & Use case diagram \\
 \ref{fig:domainclass} & Domain class diagram \\
 \ref{fig:er} & Database schema, entity-relationship diagram \\
+\ref{fig:dbclass} & Database schema, UML class diagram \\
 \ref{fig:layers} & Layered architecture \\
 \ref{fig:component} & Component diagram \\
 \ref{fig:deployment} & Deployment diagram \\
 \ref{fig:deps} & Dependency direction \\
-\ref{fig:sequence} & Sequence diagram of a complete order \\
+\ref{fig:seqsuccess} & Scenario 1: an order placed and delivered \\
+\ref{fig:seqrefused} & Scenario 2: an order refused on the robot's condition \\
+\ref{fig:seqestop} & Scenario 3: a running order halted by the emergency stop \\
 \ref{fig:payloadenergy} & Energy per metre against payload \\
 \ref{fig:statemachine} & Duty-cycle state machine \\
 \ref{fig:battery} & Battery over one session \\
