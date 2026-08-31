@@ -478,22 +478,50 @@ def fig_dependency_direction():
     save(fig, "fig-dependency-direction.png")
 
 
-def fig_waterfall():
-    phases = ["Requirements", "Analysis", "Design", "Implementation",
-              "Testing", "Deployment"]
-    fig, ax = plt.subplots(figsize=(7.4, 3.4))
-    for index, phase in enumerate(phases):
-        x, y = index * 1.18, (len(phases) - index - 1) * 0.5
-        ax.add_patch(Rectangle((x, y), 1.05, 0.46, facecolor=BLUE, alpha=0.20,
-                               edgecolor=BLUE, lw=1.6))
-        ax.text(x + 0.52, y + 0.23, phase, ha="center", va="center", fontsize=8.2)
-        if index < len(phases) - 1:
-            ax.add_patch(FancyArrowPatch((x + 1.05, y + 0.12), (x + 1.18, y - 0.04),
-                                         arrowstyle="-|>", mutation_scale=11, color=GREY))
-    ax.set_xlim(-0.15, 7.2); ax.set_ylim(-0.35, 2.85)
+def fig_incremental():
+    """Pressman's incremental model, drawn with this project's own three increments.
+
+    The point the picture has to make is that the phases are not a single pass: each increment
+    runs the whole sequence and ends in something delivered. Drawing them staggered rather than
+    stacked is what shows that increment 2 starts from a working system rather than from a
+    document.
+    """
+    phases = ["Req.", "Analysis", "Design", "Impl.", "Testing", "Deploy"]
+    increments = [
+        ("Increment 1  Core delivery system", BLUE),
+        ("Increment 2  Decision layer", GREEN),
+        ("Increment 3  Operational control", PURPLE),
+    ]
+    box_w, box_h, gap = 0.92, 0.42, 0.06
+    row_drop, row_shift = 1.02, 0.72
+
+    fig, ax = plt.subplots(figsize=(7.6, 4.2))
+    for row, (label, colour) in enumerate(increments):
+        y = (len(increments) - row - 1) * row_drop
+        x0 = row * row_shift
+        ax.text(x0 - 0.12, y + box_h + 0.20, label, fontsize=8.6,
+                fontweight="bold", color=colour, va="bottom")
+        for index, phase in enumerate(phases):
+            x = x0 + index * (box_w + gap)
+            ax.add_patch(Rectangle((x, y), box_w, box_h, facecolor=colour, alpha=0.20,
+                                   edgecolor=colour, lw=1.4))
+            ax.text(x + box_w / 2, y + box_h / 2, phase, ha="center", va="center", fontsize=7.6)
+            if index < len(phases) - 1:
+                ax.add_patch(FancyArrowPatch((x + box_w, y + box_h / 2),
+                                             (x + box_w + gap, y + box_h / 2),
+                                             arrowstyle="-|>", mutation_scale=8, color=GREY))
+        # the delivery that closes the increment - the whole reason the row exists
+        end_x = x0 + len(phases) * (box_w + gap)
+        ax.add_patch(FancyArrowPatch((end_x - gap, y + box_h / 2), (end_x + 0.24, y + box_h / 2),
+                                     arrowstyle="-|>", mutation_scale=11, color=colour))
+        ax.text(end_x + 0.34, y + box_h / 2, "delivered\nand verified", fontsize=7.4,
+                color=colour, va="center", style="italic")
+
+    ax.set_xlim(-0.35, 9.6)
+    ax.set_ylim(-0.35, 3.15)
     ax.axis("off")
-    ax.set_title("Waterfall phases followed by the project")
-    save(fig, "fig-waterfall.png")
+    ax.set_title("The incremental model as followed: each increment runs the full phase sequence")
+    save(fig, "fig-incremental-model.png")
 
 
 # ========================================================================= main
@@ -518,7 +546,7 @@ def main():
     fig_warehouse_layout()
     fig_layered_architecture()
     fig_dependency_direction()
-    fig_waterfall()
+    fig_incremental()
 
     # The acceptance table is generated from the same JSON as fig_acceptance_results, and is
     # refreshed here so the figure and the table beside it can never describe different runs.

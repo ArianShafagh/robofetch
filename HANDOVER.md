@@ -1091,9 +1091,11 @@ three in one request — a stale API answers with `robot_connected: false` and t
 
 ## 6. Milestone status
 
-These are the **v1 construction milestones**, kept as history. Two of them were later removed on
-purpose — a feature built, verified and then deleted is part of the project's story, and §5 and §7
-follow the same convention. For what the system does *now*, read §0.
+These are the **v1 construction milestones**, kept as history. In the report they appear as the
+construction stages inside **increment 1** (report §"The Increments"); the report's three
+increments are v1 core delivery, v2 decision layer, v3 operational control. Two milestones were
+later removed on purpose — a feature built, verified and then deleted is part of the project's
+story, and §5 and §7 follow the same convention. For what the system does *now*, read §0.
 
 | # | Milestone | State | Evidence |
 |---|---|---|---|

@@ -357,81 +357,94 @@ belong to this project.
 % ============================================================
 
 \section{Choice of Process Model}
-The project follows a single, named process model: \textbf{plan-driven incremental delivery}. The
-specification and the architecture are settled once, before construction begins, as in a waterfall
-process; the construction itself is then delivered as a series of increments, each of which is a
-working, verified subset of the system rather than a stage of a partially built one. Sommerville
-describes this as incremental delivery, and it is sometimes called staged delivery. It is one
-model, not two run side by side, and the report is organised to match it: a section for each
-up-front phase, and a section for each increment of construction.
+The project follows the \textbf{incremental model}. It is a plan-driven process: the system is
+delivered as a sequence of increments, and each increment runs the full sequence of phases --
+requirements, analysis, design, implementation, testing and deployment -- ending in a working,
+verified subset of the system rather than in a document. Pressman describes it as combining linear
+and parallel process flows, each increment applying the linear sequence; Sommerville calls the same
+shape incremental delivery, and McConnell staged delivery. It is one model, not two placed side by
+side, and this chapter and Section~\ref{sec:increments} are organised to match it.
 
-\subsection*{Why the specification is settled up front}
+The single claim that distinguishes it from a waterfall is this: \textbf{requirements are frozen per
+increment, not for the project as a whole.} Each increment is specified before it is built and is
+traceable from its requirements to its tests, which is the discipline a plan-driven process asks
+for. Between increments the specification is allowed to grow, and in this project it did: the
+approved proposal defines fifteen functional requirements and this report defines twenty-one. Under
+a pure waterfall those six additions would be a defect in the process. Under the incremental model
+they are the process behaving as designed.
+
+\subsection*{Why the phases are still followed inside each increment}
 Three properties of this problem make the plan-driven half appropriate.
 
-First, the requirements were knowable before implementation started. The requirements of a delivery
-robot are determined largely by physics and by the warehouse, and both are known in advance; they
-are not discovered through user feedback. Second, the client specifies once rather than
-collaborating continuously, so there is no channel through which a changing scope would arrive.
-Third, the architecture is load-bearing and expensive to revise: the boundary between the web tier,
-the robotic middleware and the simulator determines what can be tested and how, and settling it
-late would have invalidated work already done.
+First, within an increment the requirements are knowable in advance. The requirements of a delivery
+robot are determined largely by physics and by the warehouse, and both are known before the work
+starts; they are not discovered by negotiation. Second, the client specifies once per increment
+rather than collaborating continuously, so there is no channel through which a mid-increment change
+of scope would arrive. Third, the architecture is load-bearing and expensive to revise: the
+boundaries between the web tier, the robotic middleware and the simulator determine what can be
+tested and how. That architecture was settled in the first increment and has not been re-cut since,
+which is what allowed the later increments to add behaviour rather than rebuild structure.
 
-\subsection*{Why construction is nevertheless incremental}
-A pure waterfall would have required the whole system to be built before any of it could be
-demonstrated, and in this project that is not merely inconvenient but impossible to verify. The
+\subsection*{Why delivery is nevertheless incremental}
+A single-delivery waterfall would require the whole system to be built before any of it could be
+demonstrated, and for this system that is not merely inconvenient but impossible to verify. The
 system is physical. A claim about it can only be believed once a real robot has moved a real parcel
 in the simulator, and that check cannot be deferred to a testing phase at the end, because each
-layer depends on the one beneath it behaving correctly in the world rather than on paper.
+layer depends on the one beneath it behaving correctly in the world rather than on paper. Chapter
+\ref{ch:testing} records a case where every command reported success while no parcel had moved;
+that failure is the reason verification is placed inside every increment rather than after all of
+them.
 
-Construction therefore proceeded as increments, each ending in something that ran and was verified
-against the simulator before the next began. Navigation could not be written until a robot could be
-driven; manipulation could not be written until the robot could reach a shelf; the decision layer
-could not be written until an order could be executed. The increments follow that dependency order,
-which is a property of the problem rather than a schedule anyone chose.
-
-This is also what made two later decisions safe. An increment that has been delivered and verified
-can be judged on its behaviour rather than on its design, and two of them were subsequently
-\emph{withdrawn} on that evidence: the nearest-neighbour scheduler, because orders should be served
-in the sequence customers placed them, and the retry state machine, because its complexity was not
-repaid by what it did. Removing a delivered increment is a decision a plan-driven process has no
-natural place for, and it is one of the clearest arguments that the incremental half of this model
-was doing real work.
+Incremental delivery is also what made two later decisions possible. A delivered increment can be
+judged on its behaviour rather than on its design, and two features were \emph{withdrawn} on that
+evidence in the second increment: the nearest-neighbour scheduler, because serving orders by
+proximity allows a customer to be overtaken indefinitely because their goods are further away, and
+the retry state machine, because its complexity was not repaid by what it did. Removing a delivered
+feature is a decision a single-delivery process has no natural moment for. It is the clearest
+evidence in this project that the increments were real rather than a label applied afterwards.
 
 \subsection*{Why not an agile process}
-The distinction that matters is between \emph{incremental delivery} and \emph{incremental
-specification}. This project delivered incrementally but specified once. An agile process assumes
-the requirements are discovered through repeated contact with users, and answers that with
-artifacts built for negotiation: a product backlog that is reordered between iterations, user
-stories written and re-estimated as understanding changes, and a velocity measure used to forecast.
-None of those has anything to act on here, because there is no channel through which the
-requirements change. Adopting them would have produced ceremony without information.
+The distinction that matters is between incremental \emph{delivery} and incremental
+\emph{specification}. This project delivers incrementally but specifies once per increment. An
+agile process assumes the requirements are discovered through repeated contact with users, and it
+answers that assumption with artifacts built for negotiation: a product backlog reordered between
+iterations, stories re-estimated as understanding changes, and a velocity measure used to forecast
+the next iteration.
 
-\uploadedfigure{Figures/fig-waterfall.png}{0.9\textwidth}
-{The phases of the process, each producing the input for the next.}{fig:waterfall}
+None of those has anything to act on here, because there is no continuous channel through which the
+requirements change. Adopting them would have produced ceremony without information. For the same
+reason this report presents no burndown chart: none was kept, because there was no iteration
+cadence to burn down against, and drawing one after the fact would be an invention rather than a
+record.
+
+\uploadedfigure{Figures/fig-incremental-model.png}{0.95\textwidth}
+{The process as followed. Each increment runs the full sequence of phases and ends in a delivered,
+verified subset of the system; the specification is fixed for the increment being built, not for
+the project as a whole.}{fig:incremental}
 
 \section{Phases and Their Deliverables}
-The table below gives the phases and what each produced. The first three are carried out once and
-completed before construction starts, which is what makes the process plan-driven. Implementation
-and testing are \emph{not} single passes: they are repeated inside every increment, and are listed
-here once because the deliverable is the same each time. The increments themselves are enumerated
-in Section~\ref{sec:increments}.
+The table below gives the phases and what each produced. Every phase runs inside \textbf{every}
+increment, not once for the project: each increment is specified, designed, built, tested and
+delivered before the next is specified. The deliverables are listed once because their kind is the
+same each time; what differs is their content, which is given per increment in
+Section~\ref{sec:increments}.
 
 \begin{longtable}{@{}p{0.22\textwidth}p{0.72\textwidth}@{}}
 \toprule
 \textbf{Phase} & \textbf{Deliverables} \\
 \midrule
 \endhead
-Requirements & The functional and non-functional requirements listed in
-Chapter~\ref{ch:requirements}, the actors, and the use case model. \\
+Requirements & The user and system requirements listed in Chapter~\ref{ch:requirements}, the
+actors, and the use case model. Fixed for the increment being built, and extended between
+increments. \\
 Analysis & The domain model, the database design, and the categorisation of functionality. \\
 Design & The architecture, the component decomposition, the interfaces between components, and
 the algorithms for the complex features. \\
-Implementation \emph{(per increment)} & The nine software packages, the simulated world, and the
-machine-learning pipeline, delivered across the nine increments of
-Section~\ref{sec:increments}. \\
-Testing \emph{(per increment)} & The automated test suites, and the acceptance suite that runs
-against the live system. Each increment was verified against the simulator before the next began;
-the measured results are reported in Chapter~\ref{ch:testing}. \\
+Implementation & The nine software packages, the simulated world, and the machine-learning
+pipeline, delivered across the three increments of Section~\ref{sec:increments}. \\
+Testing & The automated test suites, and the acceptance suite that runs against the live system.
+Each increment was verified against the simulator before the next was specified; the measured
+results are reported in Chapter~\ref{ch:testing}. \\
 Deployment and maintenance & The launch configuration, the run instructions, the known limitations
 and the handover documentation. \\
 \bottomrule
@@ -441,74 +454,102 @@ and the handover documentation. \\
 
 \section{The Increments}
 \label{sec:increments}
-Construction was delivered as nine increments. Each one ends in something that runs and that was
-verified before the next began, and each is listed below with what it delivered and the evidence
-that closed it. The evidence is deliberately behavioural rather than a statement that the code was
-written: an increment was not considered closed because it compiled, but because the system did
-something observable that it could not do before.
+Three increments were delivered. Each ran the phases described above and ended in a system that
+ran and was verified before the next was specified. This section gives, for each one, what it was
+asked to do, what was designed and built, and the behaviour that closed it.
 
-The ordering is a consequence of dependency, not of a schedule. Nothing above a layer can be
-verified until the layer beneath it works in the world: navigation cannot be tested without a robot
-that moves, manipulation cannot be tested without a robot that can reach a shelf, and the decision
-layer cannot be tested without an order that executes.
+\subsection{Increment 1 --- Core delivery system}
+\textbf{Requirements.} FR1--FR3, FR7--FR9 and FR13: a client can order a product by name, the robot
+fetches it and puts it down at a bay, a failed grab is bounded rather than endless, a delivery is
+confirmed against the simulator, and the history can be read back.
 
-\begin{longtable}{@{}p{0.05\textwidth}p{0.31\textwidth}p{0.28\textwidth}p{0.30\textwidth}@{}}
+\textbf{Design and construction.} The architecture that all later work rests on was settled here:
+the simulated warehouse and the robot model, the map and the navigation stack, the gripper, the
+task manager that chains navigation and manipulation into a delivery, and the web tier that carries
+an order from a browser into the robotic system. Construction proceeded in dependency order,
+because nothing above a layer can be verified until the layer beneath it works in the world:
+
+\begin{longtable}{@{}p{0.05\textwidth}p{0.34\textwidth}p{0.55\textwidth}@{}}
 \toprule
-\textbf{\#} & \textbf{Increment} & \textbf{Delivered} & \textbf{Evidence that closed it} \\
+\textbf{\#} & \textbf{Stage} & \textbf{Behaviour that closed it} \\
 \midrule
 \endhead
-I1 & Simulated world and a drivable robot & The warehouse description, a differential-drive robot
-with a laser sensor and a gripper link, and the bridge to the middleware & Sensor, odometry,
-transform and velocity topics all carried; the robot drives under manual command \\
-I2 & Map and autonomous navigation & A map generated from the same geometry that defines the world,
-localization, and the navigation stack configured & Goals from one side of the room to the other
-and back both succeed; localization error 0.05 to 0.14 m \\
-I3 & Manipulation & The gripper node, attaching and detaching parcels, and the check that a grab
-really took hold & Grab, release and re-attach all verified; out-of-reach grabs refused \\
-I4 & One complete order & The task manager, chaining navigation and manipulation into a delivery &
-A full navigate, grab, carry, release sequence completes \\
-I5 & Order sequencing \emph{(later withdrawn)} & A nearest-neighbour scheduler serving orders by
-proximity & Served in a different sequence from the one submitted, as designed. Withdrawn: fairness
-to the customer outweighs distance travelled, and FR6 now requires arrival order \\
-I6 & Failure handling \emph{(partly withdrawn)} & A retry state machine with backoff around the
-grab & Three attempts, then the order fails and the queue continues. The state machine was later
-withdrawn as complexity that did not repay itself; the bounded three-attempt behaviour it protected
-survives as FR8 \\
-I7 & Web tier and persistence & The database, the web interface and the bridge carrying orders into
-the robotic system & An order submitted over the network reaches the database, then the robot, and
-its status returns to the database \\
-I8 & Operator interface & The pages through which orders are placed and the system is observed &
-Every page renders server-side, and a delivery ordered from a browser completes end to end \\
-I9 & Decision layer and release & The condition model, the admission workflow, the prediction
-service, the test suites and the documentation & Orders are refused with reasons; the acceptance
-suite passes against the live simulator \\
+1 & Simulated world and a drivable robot & Sensor, odometry, transform and velocity topics all
+carried; the robot drives under manual command \\
+2 & Map and autonomous navigation & Goals across the room and back both succeed; localization error
+0.05 to 0.14 m \\
+3 & Manipulation & Grab, release and re-attach verified; out-of-reach grabs refused \\
+4 & One complete order & A full navigate, grab, carry, release sequence completes \\
+5 & Order sequencing & Orders served in a different sequence from the one submitted, as designed \\
+6 & Failure handling & Three attempts, then the order fails and the queue continues \\
+7 & Web tier and persistence & An order submitted over the network reaches the database, then the
+robot, and its status returns to the database \\
+8 & Operator interface & A delivery ordered from a browser completes end to end \\
+9 & Bringup, tests and documentation & The whole system starts from one command; unit, integration
+and acceptance suites pass \\
 \bottomrule
-\caption{The nine increments, what each delivered, and the behaviour that closed it.}
-\label{tab:increments}
+\caption{Construction stages within the first increment, in dependency order.}
+\label{tab:increment1}
 \end{longtable}
 
-\subsection*{The turning point}
-The ninth increment is the one that changes what the system is. Increments one to eight build a
-robot that \emph{carries out} orders; the ninth gives it a model of its own physical state and a
-workflow that can \emph{refuse} them. Everything the report calls a complex functionality lives in
-that increment, which is why it is the largest and why it is described separately in
+\textbf{What closed it.} A delivery ordered over the network completed, and the parcel's position
+read back from the simulator agreed with the bay.
+
+\textbf{A note on its specification.} This increment established the core product, and its detailed
+requirements were settled as it was built rather than approved beforehand. That is the ordinary
+role of a first increment in this model: it produces both a working core and the understanding from
+which the next increment is specified. The proposal that governs the second increment is written
+explicitly as a comparison against this one.
+
+\subsection{Increment 2 --- Decision layer}
+\textbf{Requirements.} FR4--FR6, FR10--FR12, FR15 and FR16, specified in the approved proposal
+before any of this increment was built. The question the first increment could not answer is the
+one a warehouse actually asks: not \emph{can the robot carry this}, but \emph{can it carry this
+now, and what will it cost}.
+
+\textbf{Design and construction.} Orders move from hard-coded item names to a product catalogue held
+in the database, so coordinates leave the code entirely. The robot gains a model of its own
+condition --- battery, temperature and mechanical wear, coupled to one another --- and every order
+passes through an admission workflow that estimates its cost, consults a classifier and applies
+policy gates that can overrule it. The interface is rebuilt as server-rendered pages with no
+JavaScript. These are the complex functionalities, and they are described algorithmically in
 Chapter~\ref{ch:complex}.
 
-\subsection*{Two increments were withdrawn, and that is the point}
-I5 and I6 were built, verified and then removed. A plan-driven process with a single delivery at
-the end has no natural moment at which a completed feature can be judged on its behaviour and
-deleted; incremental delivery does, and this project used it twice.
+\textbf{What closed it.} Orders are refused with reasons the operator can read, and the acceptance
+suite passes against the live simulator.
 
-The scheduler was withdrawn because seeing it work made the wrong behaviour obvious: orders served
-by proximity mean a customer can be overtaken indefinitely because their goods are further away.
-That is a requirements judgement which only became clear once the behaviour could be watched, and
-it is now fixed in FR6. The retry state machine was withdrawn because its structure was more
-elaborate than the behaviour it produced; the guarantee it existed to provide is stated directly by
-FR8 and is met by a plain bounded loop.
+\textbf{Two features were withdrawn.} The nearest-neighbour scheduler and the retry state machine
+were both delivered and verified in the first increment, and both were removed in this one. The
+scheduler was withdrawn because watching it work made the wrong behaviour plain: serving by
+proximity lets a customer be overtaken indefinitely because their goods are further away. That is a
+requirements judgement which only became available once the behaviour could be observed, and it is
+now fixed as FR6. The state machine was withdrawn because its structure was more elaborate than the
+behaviour it produced; the guarantee it existed to provide is stated directly by FR8 and met by a
+bounded loop. Both removals reduced the amount of code in the system, and the project records that
+as a result rather than a loss.
 
-Both removals reduced the amount of code in the system, and the project treats that as a result
-rather than a loss. What survived is recorded in the requirements; what did not is recorded here,
-because a report that lists only the features that worked describes a project that did not happen.
+\subsection{Increment 3 --- Operational control}
+\textbf{Requirements.} FR14 and FR17--FR21. These did not come from rethinking the design. They came
+from operating the system, which made three absences obvious: there was no way to sign in, so every
+visitor had the same reach; there was no way to stop the robot once it had started; and there was no
+way to ask it to go home. The same period added the reservation of work already accepted, without
+which an admission decision was being taken against a robot that was standing still only on paper.
+
+\textbf{Design and construction.} Authentication with two roles enforced on every request; a
+non-latching emergency stop handled on the subscription callback, because the worker thread is
+normally blocked waiting on a navigation result when the button is pressed; a return to the station
+queued as an ordinary task so that it cannot interrupt a carry; and a reservation ledger derived
+from the orders table rather than stored beside it, so that a terminal status releases the
+reservation automatically and the two cannot drift apart.
+
+\textbf{What closed it.} The acceptance suite covers all four: the login gate on every protected
+page, the stop verified against the robot's measured displacement in the simulator, the queued
+return, and the reservation both held and released.
+
+\textbf{Why this is an increment and not a redesign.} None of it changed the shape of the system.
+Each is a page, a queue entry or a database query fitted to machinery that already existed, which
+is why the work was added to the existing architecture rather than prompting a new one.
+
 
 \section{Traceability}
 Every requirement in Chapter~\ref{ch:requirements} maps forward to a design element and to at
@@ -2106,43 +2147,52 @@ than the caller would wait & Load the model when the service starts \\
 \label{ch:evolution}
 % ============================================================
 
-The system was delivered in two versions, and the reason for the second one is worth a short
-explanation.
+Section~\ref{sec:increments} describes what each increment delivered. This chapter records the
+judgement behind the increments: why the second one was built as a replacement rather than an
+addition, and what the sequence cost and returned.
 
-The first version was a complete and working delivery robot. It could accept a request over the
-network, navigate a warehouse, pick up a parcel, deliver it and report the result, and it verified
-its deliveries against the simulator. As a first version it did its job: it proved that the
+\section{Why the Second Increment Replaced Rather Than Extended}
+The first increment was a complete and working delivery robot. It accepted a request over the
+network, navigated the warehouse, picked a parcel up, delivered it, verified the delivery against
+the simulator and reported the result. As a first increment it did its job: it proved the
 navigation, the manipulation and the web interface could be made to work together, and it produced
-the environment and the verification discipline that the second version inherited.
+the environment and the verification discipline that everything after it inherited.
 
-Its limitations became clear once the requirements were examined more carefully. The way work was
-requested did not match how a warehouse actually operates, and the information the system held
-about itself was too thin to support any real decision-making: the robot could carry out an order,
+Its limitations became clear once it was examined against what a warehouse actually needs. Work was
+requested by naming an item in the code rather than by choosing a product, and the information the
+system held about itself was too thin to support any decision: the robot could carry out an order,
 but it had no basis on which to judge whether it should. Some of the machinery it contained was also
 more elaborate than the behaviour it produced justified.
 
-Rather than adding to that structure, the decision was taken to build a second version around the
-missing idea: that the system should understand its own physical state well enough to decide
-whether a job is possible. This affected the data model, the interface and the robot's software, and
-patching those changes into the existing structure would have produced something harder to explain
-than a clean second version.
+The choice at that point was between extending the existing structure and replacing the parts that
+were wrong. Replacement was chosen because the missing idea --- that the system should understand
+its own physical state well enough to decide whether a job is possible --- reaches into the data
+model, the interface and the robot's software at once. Patching that into the existing structure
+would have produced something harder to explain than a clean second increment, and explicability is
+a stated goal of this project.
 
-The second version resolves those limitations. Work is requested the way a warehouse requests it,
-against a catalogue rather than against coordinates. The robot maintains a model of its own
-condition and records it. Every order passes through a decision that can refuse it, with a reason.
-The interface is simpler than before while showing more of what matters. The problems of the first
-version are not present in the second, and the parts of the first version that had proved
-themselves, particularly the environment design and the verification discipline, were carried
-forward unchanged.
+What had proved itself was carried forward unchanged: the warehouse design, the navigation
+configuration, and above all the rule that a delivery is believed only when the simulator confirms
+it.
 
-A third round of work followed, prompted by using the system rather than by rethinking it. Operating
-it made three absences obvious: there was no way to sign in, so every visitor had the same reach;
-there was no way to stop the robot once it had started; and there was no way to ask it to go home.
-The same period added the reservation of work already accepted, without which the admission decision
-was being taken against a robot that was standing still only on paper. None of these changed the
-shape of the system, which is why they were added to the second version rather than prompting a
-third: each is a page, a queue entry or a database query fitted to machinery that already existed.
+\section{What the Sequence Cost and Returned}
+Two features were built, verified and then deleted, which is work that produced no shipped
+functionality. Against that, the sequence returned three things that a single delivery would not
+have.
 
+It made the two withdrawals possible at all. Both were judged on observed behaviour rather than on
+their design, and neither fault was visible on paper: serving orders by proximity looks reasonable
+until a customer is overtaken, and a retry state machine looks prudent until its behaviour turns out
+to equal that of a bounded loop.
+
+It kept every claim testable as it was made. Because each increment ended in a system that ran, the
+verification discipline described in Chapter~\ref{ch:testing} could be applied continuously rather
+than assembled at the end, which is what caught a case where every command reported success and no
+parcel had moved.
+
+Finally, it absorbed the third increment without disturbance. Authentication, the emergency stop,
+the return to the station and the reservation of accepted work were all added to an architecture
+that was settled in the first increment and has not been re-cut since.
 % ============================================================
 \chapter{Limitations}
 \label{ch:limitations}
@@ -2259,7 +2309,7 @@ tree imports the training package \\
 \midrule
 \endhead
 \ref{fig:warehouse} & Warehouse layout drawn to scale \\
-\ref{fig:waterfall} & Phases of the development process \\
+\ref{fig:incremental} & The incremental model as followed, phases within each increment \\
 \ref{fig:usecase} & Use case diagram \\
 \ref{fig:domainclass} & Domain class diagram \\
 \ref{fig:er} & Database schema, entity-relationship diagram \\
