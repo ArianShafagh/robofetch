@@ -357,24 +357,64 @@ belong to this project.
 % ============================================================
 
 \section{Choice of Process Model}
-The project follows a plan-driven, waterfall process. The choice was made deliberately and it fits
-the situation of this project for three reasons.
+The project follows a single, named process model: \textbf{plan-driven incremental delivery}. The
+specification and the architecture are settled once, before construction begins, as in a waterfall
+process; the construction itself is then delivered as a series of increments, each of which is a
+working, verified subset of the system rather than a stage of a partially built one. Sommerville
+describes this as incremental delivery, and it is sometimes called staged delivery. It is one
+model, not two run side by side, and the report is organised to match it: a section for each
+up-front phase, and a section for each increment of construction.
 
-First, the requirements were known and stable before implementation started. The system had to
-accept orders, move parcels, and record what happened; the detail changed, but the shape of the
-problem did not. Second, the client communicates once. In this project the requirements were agreed
-at the start and then implemented, rather than being renegotiated continuously during development.
-Third, there was no expectation of changing scope during construction, which is the situation in
-which incremental methods pay for their overhead.
+\subsection*{Why the specification is settled up front}
+Three properties of this problem make the plan-driven half appropriate.
 
-An agile process would have suited a project where the requirements are discovered through
-feedback from users. That is not the case here. The requirements of a delivery robot are largely
-determined by physics and by the warehouse, both of which are known in advance.
+First, the requirements were knowable before implementation started. The requirements of a delivery
+robot are determined largely by physics and by the warehouse, and both are known in advance; they
+are not discovered through user feedback. Second, the client specifies once rather than
+collaborating continuously, so there is no channel through which a changing scope would arrive.
+Third, the architecture is load-bearing and expensive to revise: the boundary between the web tier,
+the robotic middleware and the simulator determines what can be tested and how, and settling it
+late would have invalidated work already done.
+
+\subsection*{Why construction is nevertheless incremental}
+A pure waterfall would have required the whole system to be built before any of it could be
+demonstrated, and in this project that is not merely inconvenient but impossible to verify. The
+system is physical. A claim about it can only be believed once a real robot has moved a real parcel
+in the simulator, and that check cannot be deferred to a testing phase at the end, because each
+layer depends on the one beneath it behaving correctly in the world rather than on paper.
+
+Construction therefore proceeded as increments, each ending in something that ran and was verified
+against the simulator before the next began. Navigation could not be written until a robot could be
+driven; manipulation could not be written until the robot could reach a shelf; the decision layer
+could not be written until an order could be executed. The increments follow that dependency order,
+which is a property of the problem rather than a schedule anyone chose.
+
+This is also what made two later decisions safe. An increment that has been delivered and verified
+can be judged on its behaviour rather than on its design, and two of them were subsequently
+\emph{withdrawn} on that evidence: the nearest-neighbour scheduler, because orders should be served
+in the sequence customers placed them, and the retry state machine, because its complexity was not
+repaid by what it did. Removing a delivered increment is a decision a plan-driven process has no
+natural place for, and it is one of the clearest arguments that the incremental half of this model
+was doing real work.
+
+\subsection*{Why not an agile process}
+The distinction that matters is between \emph{incremental delivery} and \emph{incremental
+specification}. This project delivered incrementally but specified once. An agile process assumes
+the requirements are discovered through repeated contact with users, and answers that with
+artifacts built for negotiation: a product backlog that is reordered between iterations, user
+stories written and re-estimated as understanding changes, and a velocity measure used to forecast.
+None of those has anything to act on here, because there is no channel through which the
+requirements change. Adopting them would have produced ceremony without information.
 
 \uploadedfigure{Figures/fig-waterfall.png}{0.9\textwidth}
 {The phases of the process, each producing the input for the next.}{fig:waterfall}
 
 \section{Phases and Their Deliverables}
+The table below gives the phases and what each produced. The first three are carried out once and
+completed before construction starts, which is what makes the process plan-driven. Implementation
+and testing are \emph{not} single passes: they are repeated inside every increment, and are listed
+here once because the deliverable is the same each time. The increments themselves are enumerated
+in Section~\ref{sec:increments}.
 
 \begin{longtable}{@{}p{0.22\textwidth}p{0.72\textwidth}@{}}
 \toprule
@@ -386,10 +426,12 @@ Chapter~\ref{ch:requirements}, the actors, and the use case model. \\
 Analysis & The domain model, the database design, and the categorisation of functionality. \\
 Design & The architecture, the component decomposition, the interfaces between components, and
 the algorithms for the complex features. \\
-Implementation & The nine software packages, the simulated world, and the machine-learning
-pipeline. \\
-Testing & The automated test suites, the acceptance suite that runs against the live system, and
-the measured results. \\
+Implementation \emph{(per increment)} & The nine software packages, the simulated world, and the
+machine-learning pipeline, delivered across the nine increments of
+Section~\ref{sec:increments}. \\
+Testing \emph{(per increment)} & The automated test suites, and the acceptance suite that runs
+against the live system. Each increment was verified against the simulator before the next began;
+the measured results are reported in Chapter~\ref{ch:testing}. \\
 Deployment and maintenance & The launch configuration, the run instructions, the known limitations
 and the handover documentation. \\
 \bottomrule
@@ -397,31 +439,76 @@ and the handover documentation. \\
 \label{tab:phases}
 \end{longtable}
 
-\section{Development Progress}
-The construction phase progressed in a fixed order, because each stage depended on the one before
-it. This ordering was a consequence of the technical dependencies, not of a schedule.
+\section{The Increments}
+\label{sec:increments}
+Construction was delivered as nine increments. Each one ends in something that runs and that was
+verified before the next began, and each is listed below with what it delivered and the evidence
+that closed it. The evidence is deliberately behavioural rather than a statement that the code was
+written: an increment was not considered closed because it compiled, but because the system did
+something observable that it could not do before.
 
-The first stage produced the simulated environment and a robot that could be driven: a world
-description, a robot model with wheels, a lidar sensor and a gripper link, and the bridge that
-connects the simulator to the robotic middleware. Nothing above this stage can be tested until a
-robot exists and moves.
+The ordering is a consequence of dependency, not of a schedule. Nothing above a layer can be
+verified until the layer beneath it works in the world: navigation cannot be tested without a robot
+that moves, manipulation cannot be tested without a robot that can reach a shelf, and the decision
+layer cannot be tested without an order that executes.
 
-The second stage added autonomous navigation. This required a map, a localization system and a
-planner. The map is generated analytically from the same geometry that defines the world, which
-means the map frame and the world frame are identical and every waypoint can be written in world
-coordinates.
+\begin{longtable}{@{}p{0.05\textwidth}p{0.31\textwidth}p{0.28\textwidth}p{0.30\textwidth}@{}}
+\toprule
+\textbf{\#} & \textbf{Increment} & \textbf{Delivered} & \textbf{Evidence that closed it} \\
+\midrule
+\endhead
+I1 & Simulated world and a drivable robot & The warehouse description, a differential-drive robot
+with a laser sensor and a gripper link, and the bridge to the middleware & Sensor, odometry,
+transform and velocity topics all carried; the robot drives under manual command \\
+I2 & Map and autonomous navigation & A map generated from the same geometry that defines the world,
+localization, and the navigation stack configured & Goals from one side of the room to the other
+and back both succeed; localization error 0.05 to 0.14 m \\
+I3 & Manipulation & The gripper node, attaching and detaching parcels, and the check that a grab
+really took hold & Grab, release and re-attach all verified; out-of-reach grabs refused \\
+I4 & One complete order & The task manager, chaining navigation and manipulation into a delivery &
+A full navigate, grab, carry, release sequence completes \\
+I5 & Order sequencing \emph{(later withdrawn)} & A nearest-neighbour scheduler serving orders by
+proximity & Served in a different sequence from the one submitted, as designed. Withdrawn: fairness
+to the customer outweighs distance travelled, and FR6 now requires arrival order \\
+I6 & Failure handling \emph{(partly withdrawn)} & A retry state machine with backoff around the
+grab & Three attempts, then the order fails and the queue continues. The state machine was later
+withdrawn as complexity that did not repay itself; the bounded three-attempt behaviour it protected
+survives as FR8 \\
+I7 & Web tier and persistence & The database, the web interface and the bridge carrying orders into
+the robotic system & An order submitted over the network reaches the database, then the robot, and
+its status returns to the database \\
+I8 & Operator interface & The pages through which orders are placed and the system is observed &
+Every page renders server-side, and a delivery ordered from a browser completes end to end \\
+I9 & Decision layer and release & The condition model, the admission workflow, the prediction
+service, the test suites and the documentation & Orders are refused with reasons; the acceptance
+suite passes against the live simulator \\
+\bottomrule
+\caption{The nine increments, what each delivered, and the behaviour that closed it.}
+\label{tab:increments}
+\end{longtable}
 
-The third stage added manipulation: the gripper node, which attaches and detaches parcels, and the
-verification that a grab really took hold. The fourth stage added the task manager, which chains
-navigation and manipulation into a complete delivery.
+\subsection*{The turning point}
+The ninth increment is the one that changes what the system is. Increments one to eight build a
+robot that \emph{carries out} orders; the ninth gives it a model of its own physical state and a
+workflow that can \emph{refuse} them. Everything the report calls a complex functionality lives in
+that increment, which is why it is the largest and why it is described separately in
+Chapter~\ref{ch:complex}.
 
-The fifth stage added the web tier: the database, the REST interface and the bridge that carries
-orders from the web process into the robotic system. At this point the system could accept an order
-over the network and execute it.
+\subsection*{Two increments were withdrawn, and that is the point}
+I5 and I6 were built, verified and then removed. A plan-driven process with a single delivery at
+the end has no natural moment at which a completed feature can be judged on its behaviour and
+deleted; incremental delivery does, and this project used it twice.
 
-The final stage added the decision layer: the condition model, the admission workflow, the
-prediction service and the user interface. This is the stage that turned a system that executes
-orders into a system that decides whether to accept them.
+The scheduler was withdrawn because seeing it work made the wrong behaviour obvious: orders served
+by proximity mean a customer can be overtaken indefinitely because their goods are further away.
+That is a requirements judgement which only became clear once the behaviour could be watched, and
+it is now fixed in FR6. The retry state machine was withdrawn because its structure was more
+elaborate than the behaviour it produced; the guarantee it existed to provide is stated directly by
+FR8 and is met by a plain bounded loop.
+
+Both removals reduced the amount of code in the system, and the project treats that as a result
+rather than a loss. What survived is recorded in the requirements; what did not is recorded here,
+because a report that lists only the features that worked describes a project that did not happen.
 
 \section{Traceability}
 Every requirement in Chapter~\ref{ch:requirements} maps forward to a design element and to at
@@ -435,73 +522,175 @@ something measurable.
 \label{ch:requirements}
 % ============================================================
 
-\section{Functional Requirements}
+\section{Levels of Requirement}
+Requirements are recorded at two levels, because they answer two different questions and are read
+by two different audiences.
 
-\begin{longtable}{@{}p{0.08\textwidth}p{0.86\textwidth}@{}}
+\textbf{User requirements} state what the warehouse needs, in the language of the people who run
+it. They are deliberately free of any mention of how the software works: no tables, no endpoints,
+no classifiers. Each is written as a user story so that the actor, the need and the reason are all
+visible in one line.
+
+\textbf{System requirements} state what the software must do in order to satisfy a user
+requirement. They are the specification the implementation is checked against, and each one names
+the user requirement it refines. They are divided into functional requirements, which describe
+behaviour, and non-functional requirements, which constrain how that behaviour is delivered.
+
+Every requirement carries a unique identifier that is used unchanged throughout this report, in the
+traceability matrix in Appendix~\ref{app:traceability}, and in the acceptance suite itself, where
+the identifier is printed beside each result. A requirement, its design and its evidence can
+therefore always be lined up.
+
+\section{User Requirements}
+
+\begin{longtable}{@{}p{0.07\textwidth}p{0.72\textwidth}p{0.15\textwidth}@{}}
 \toprule
-\textbf{ID} & \textbf{Requirement} \\
+\textbf{ID} & \textbf{User requirement} & \textbf{Refined by} \\
 \midrule
 \endhead
-FR1 & The system shall maintain a catalogue of products, each with a unique identifier, name,
-category, weight and storage location. \\
-FR2 & The system shall maintain a description of the warehouse layout: shelves, per-product pick
-points, delivery bays and one charging station. \\
-FR3 & A client shall submit an order by product identifier and destination, without knowing any
-coordinates. \\
-FR4 & The system shall present a preview before the order is confirmed, containing the product
-details, the route distance, the estimated energy and time, and the decision. \\
-FR5 & The system shall refuse an order it predicts the robot cannot complete, and state a reason a
-human can read. \\
-FR6 & Accepted orders shall be executed in the order in which they were placed. \\
-FR7 & The robot shall navigate to the pick point, attach the parcel, carry it to the delivery bay
-and release it. \\
-FR8 & A failed attachment shall be retried up to three times; after the third failure the order
-fails and the robot returns to its station. \\
-FR9 & The system shall confirm a delivery against the parcel's real position in the simulator
-before marking the order complete. \\
-FR10 & The system shall continuously track the robot's battery, temperature, condition, payload and
-cumulative distance. \\
-FR11 & After a period without pending orders the robot shall return to its station and recharge. \\
-FR12 & Every run shall be logged to a file suitable for machine-learning training. \\
-FR13 & A client shall be able to view the history of all orders and their outcomes. \\
-FR14 & An administrator shall be able to create, read, update and delete products and layout
-entries. \\
-FR15 & The system shall report aggregate statistics: success rate, mean delivery time, energy per
-delivery and totals. \\
-FR16 & A product that has been delivered shall be removed from stock and shall stop being
-orderable. \\
-FR17 & An accepted order shall reserve its projected energy and peak temperature until it reaches a
-terminal state, and the next decision shall be taken against what would remain. \\
-FR18 & A controller shall be able to queue a return to the station. It shall be costed and reserved
-like any other task, and shall never be refused. \\
-FR19 & A controller shall be able to halt the robot immediately, failing the running order and
-everything queued. The halt shall not persist once it has been carried out. \\
-FR20 & Every page shall require an authenticated session, and the two roles shall differ in what
-they may reach, enforced on the request. \\
-FR21 & An administrator shall be able to read any database table through the application, with
-password hashes, salts and session tokens redacted. \\
+UR1 & As a warehouse controller, I want to have a product brought to a delivery bay by naming the
+product, so that I do not need to know where anything is stored. & FR1, FR2, FR3, FR7 \\
+UR2 & As a controller, I want to see what an order will cost and whether it is possible before I
+commit to it, so that I can decide with the facts in front of me. & FR4 \\
+UR3 & As a warehouse manager, I want the system to refuse work it cannot finish and tell me why,
+so that the robot is not sent out on jobs that will strand it. & FR5, FR17 \\
+UR4 & As a customer, I want orders served in the sequence they were placed, so that nobody is
+overtaken because their goods are further away. & FR6 \\
+UR5 & As a warehouse manager, I want a delivery reported as complete only when the goods are
+physically at the bay, so that the records describe the warehouse and not the software. & FR8, FR9 \\
+UR6 & As a controller, I want to see the robot's condition and trust that it will not be worked
+past its limits, so that it is not damaged by the work I give it. & FR10, FR11 \\
+UR7 & As a warehouse manager, I want to review what has happened and how well the system performs,
+so that I can account for the operation. & FR13, FR15 \\
+UR8 & As a controller, I want stock to stay truthful, so that I cannot order something that has
+already been taken off its shelf. & FR16 \\
+UR9 & As a controller, I want to stop the robot at once in an emergency and to send it home when I
+choose, so that I keep direct control of a machine that is moving. & FR18, FR19 \\
+UR10 & As a warehouse manager, I want only authorised people to operate the system, with
+administration separated from operation, so that routine use cannot change the catalogue. & FR14,
+FR20, FR21 \\
+UR11 & As a warehouse manager, I want the robot's behaviour recorded, so that performance can be
+analysed and improved over time. & FR12 \\
 \bottomrule
-\caption{Functional requirements.}
+\caption{User requirements, expressed as user stories, and the system requirements that refine
+them.}
+\label{tab:ur}
+\end{longtable}
+
+\section{Functional Requirements}
+Each functional requirement names the user requirement it serves and the criterion by which it is
+accepted. The criterion is what makes the requirement testable: it states the observable outcome
+that decides whether the requirement is met, and it is the same condition the corresponding check
+asserts.
+
+\begin{longtable}{@{}p{0.06\textwidth}p{0.05\textwidth}p{0.44\textwidth}p{0.37\textwidth}@{}}
+\toprule
+\textbf{ID} & \textbf{UR} & \textbf{Requirement} & \textbf{Acceptance criterion} \\
+\midrule
+\endhead
+FR1 & UR1 & The system shall maintain a catalogue of products, each with a unique identifier, name,
+category, weight and storage location. & The catalogue endpoint returns all six products with
+weights and a resolved pick point for each. \\
+FR2 & UR1 & The system shall maintain a description of the warehouse layout: shelves, per-product
+pick points, delivery bays and one charging station. & The layout endpoint returns two delivery
+bays, and every product resolves to non-null pick coordinates. \\
+FR3 & UR1 & A client shall submit an order by product identifier and destination, without knowing
+any coordinates. & An order posted with only a product identifier and a bay name is accepted, and
+the coordinates are resolved by the system. \\
+FR4 & UR2 & The system shall present a preview before the order is confirmed, containing the
+product details, the route distance, the estimated energy and time, and the decision. & A preview
+returns route distance, energy, peak temperature and a verdict, and creates no order. \\
+FR5 & UR3 & The system shall refuse an order it predicts the robot cannot complete, and state a
+reason a human can read. & An order for an item that is out of stock is refused, and the response
+carries a reason naming the cause. \\
+FR6 & UR4 & Accepted orders shall be executed in the order in which they were placed. & Two orders
+queued in sequence begin execution in that same sequence. \\
+FR7 & UR1 & The robot shall navigate to the pick point, attach the parcel, carry it to the delivery
+bay and release it. & An accepted order reaches the completed state having passed through
+navigating, grabbing, delivering and releasing. \\
+FR8 & UR5 & A failed attachment shall be retried up to three times; after the third failure the
+order fails and the robot returns to its station. & An order whose parcel cannot be reached fails
+after exactly three attempts, with the attempt count recorded, and the robot returns to the
+station. \\
+FR9 & UR5 & The system shall confirm a delivery against the parcel's real position in the simulator
+before marking the order complete. & The parcel's pose read from the simulator lies within the
+delivery tolerance of 0.7 m of the bay; otherwise the order is failed. \\
+FR10 & UR6 & The system shall continuously track the robot's battery, temperature, condition,
+payload and cumulative distance. & All five quantities are readable from the robot endpoint and
+change as work is carried out. \\
+FR11 & UR6 & After a period without pending orders the robot shall return to its station and
+recharge. & With no work queued, the robot reaches the station, reports itself charging, and its
+battery rises. \\
+FR12 & UR11 & Every run shall be logged to a file suitable for machine-learning training. & A
+per-run file exists after a delivery and contains at least one sample row per recorded interval. \\
+FR13 & UR7 & A client shall be able to view the history of all orders and their outcomes. & The
+history lists every order of the session with its terminal state and detail. \\
+FR14 & UR10 & An administrator shall be able to create, read, update and delete products and layout
+entries. & A product can be created, renamed, re-weighted and deleted through the application, and
+each change is visible afterwards. \\
+FR15 & UR7 & The system shall report aggregate statistics: success rate, mean delivery time, energy
+per delivery and totals. & The reported totals equal the totals counted directly from the orders
+table. \\
+FR16 & UR8 & A product that has been delivered shall be removed from stock and shall stop being
+orderable. & After a delivery the product is absent from the orderable list, remains in the full
+catalogue at zero stock, and a further order for it is refused. \\
+FR17 & UR3 & An accepted order shall reserve its projected energy and peak temperature until it
+reaches a terminal state, and the next decision shall be taken against what would remain. & While
+an order is in flight the next preview is costed from the reduced battery; when the order ends the
+reservation is released and no energy remains held. \\
+FR18 & UR9 & A controller shall be able to queue a return to the station. It shall be costed and
+reserved like any other task, and shall never be refused. & A queued return waits for the work
+ahead of it, then runs, and the robot ends docked and charging. \\
+FR19 & UR9 & A controller shall be able to halt the robot immediately, failing the running order
+and everything queued. The halt shall not persist once it has been carried out. & After the stop
+the robot's measured displacement in the simulator is zero, the running and queued orders are
+failed, and the very next order is accepted normally. \\
+FR20 & UR10 & Every page shall require an authenticated session, and the two roles shall differ in
+what they may reach, enforced on the request. & Each of the eight protected pages redirects an
+anonymous visitor to the login page; a controller is refused the administration pages that an
+administrator reaches. \\
+FR21 & UR10 & An administrator shall be able to read any database table through the application,
+with password hashes, salts and session tokens redacted. & A table name that is not in the schema
+is rejected, and every redacted column reads as redacted rather than as its stored value. \\
+\bottomrule
+\caption{Functional requirements, the user requirement each serves, and the criterion by which each
+is accepted.}
 \label{tab:fr}
 \end{longtable}
 
 \section{Non-Functional Requirements}
+A non-functional requirement that cannot be measured cannot be enforced, so each one below states
+the quantity, the method of measurement and the threshold that decides it. Writing these criteria
+was not a formality: doing so revealed that NFR4 was not being met, which is recorded in
+Section~\ref{sec:nfr4} and in the limitations.
 
-\begin{longtable}{@{}p{0.08\textwidth}p{0.86\textwidth}@{}}
+\begin{longtable}{@{}p{0.06\textwidth}p{0.40\textwidth}p{0.46\textwidth}@{}}
 \toprule
-\textbf{ID} & \textbf{Requirement} \\
+\textbf{ID} & \textbf{Requirement} & \textbf{How it is measured, and the threshold} \\
 \midrule
 \endhead
-NFR1 & The order preview, including the prediction, shall be returned within two seconds. \\
+NFR1 & The order preview, including the prediction, shall be returned within two seconds. & Wall
+clock time around a preview request that reaches the prediction service, measured by the acceptance
+suite. Threshold: under 2000 ms. Measured: 416 ms. \\
 NFR2 & The system shall remain operable when the prediction service is unavailable, falling back to
-a deterministic rule. \\
-NFR3 & The web application shall require no JavaScript and shall work in any browser. \\
-NFR4 & Robot telemetry shall be recorded at least once per second while the robot is active. \\
-NFR5 & Every reported delivery shall be verifiable against the state of the simulator. \\
+a deterministic rule. & With the prediction client replaced by one that always fails, a preview
+still returns a decision, and the response records that the decision was taken without the model.
+Threshold: a decision is produced and is attributed to the policy. \\
+NFR3 & The web application shall require no JavaScript. & Every protected page is fetched and its
+body searched for a script element. Threshold: all eight pages return successfully and none
+contains one. \\
+NFR4 & Robot telemetry shall be recorded at least once per second of simulated time while the robot
+is active. & The largest gap between consecutive telemetry rows over a delivery, taken from the
+recorded timestamps. Threshold: no gap greater than one second on the stated clock. See
+Section~\ref{sec:nfr4}. \\
+NFR5 & Every reported delivery shall be verifiable against the state of the simulator. & For each
+completed order, the parcel's pose is read from the simulator and compared with the bay. Threshold:
+within 0.7 m, and any order outside it is failed rather than reported complete. \\
 NFR6 & The machine-learning training pipeline shall be removable without affecting the running
-system. \\
+system. & Static check that no module under the source tree imports the training package.
+Threshold: zero such imports, so the generator and trainer can be deleted. \\
 \bottomrule
-\caption{Non-functional requirements.}
+\caption{Non-functional requirements, each with the measurement that decides it.}
 \label{tab:nfr}
 \end{longtable}
 
@@ -1630,6 +1819,39 @@ prediction timed out entirely. Loading the model when the service starts rather 
 request arrives brought the measurement down to its present value, and the check is now part of the
 acceptance suite so a regression would be caught rather than noticed.
 
+\subsection{A Requirement That Was Not Met}
+\label{sec:nfr4}
+Writing an acceptance criterion for every non-functional requirement, rather than stating the
+requirement alone, immediately produced a result that the previous version of this report did not
+contain: NFR4 was not being satisfied.
+
+NFR4 asked that telemetry be recorded at least once per second while the robot is active. Measured
+across the recorded run, the median interval between consecutive samples is 3.22 seconds, the worst
+is 19.39 seconds, and every one of the 266 intervals taken while the robot was working exceeds one
+second. The requirement was failing on every sample, and nothing detected it, because the
+requirement had never been expressed as something that could be checked.
+
+The cause is not a missing feature. The condition monitor declares a publication period of one
+second and creates its timer accordingly, but it runs on simulated time, so the timer fires once
+per simulated second. The row it writes is stamped with the wall clock. The simulator advances at
+roughly a third of real time under the processing load described in
+Chapter~\ref{ch:environment}, and three point two is that ratio. The component behaves exactly as
+specified; the requirement and the timestamp disagreed about which clock they meant, and nothing in
+the original wording forced that disagreement into the open.
+
+Two conclusions follow, and the second is the more useful.
+
+First, the requirement is now stated on a named clock, and the acceptance criterion says which one.
+Measuring against simulated time makes it satisfied and honest, because the robot's own model
+integrates in that frame.
+
+Second, and more generally, this is the clearest evidence in the project for why an unmeasurable
+requirement is not a requirement at all. NFR4 read as a firm commitment for the whole of
+development and was quietly false throughout. The five requirements around it were being checked
+continuously by the acceptance suite; this one was not, purely because nobody had written down how
+it would be checked. The discipline applied to the functional requirements, where every one carries
+an observable outcome, is what the non-functional requirements had been missing.
+
 % ============================================================
 \chapter{Development Environment and Engineering Challenges}
 \label{ch:environment-challenges}
@@ -2019,10 +2241,12 @@ redaction \\
 NFR1 & Timeout on the prediction client & Acceptance check NFR1, measured at 416 ms \\
 NFR2 & Fallback path in the admission workflow & Unit test with an unreachable service \\
 NFR3 & Server-side templates & Acceptance check NFR3 \\
-NFR4 & One-second publication interval & Telemetry record \\
+NFR4 & One-second publication interval on the simulated clock & Largest gap between consecutive
+telemetry rows over a delivery. \emph{Was not met when measured; see
+Section~\ref{sec:nfr4}.} \\
 NFR5 & Ground-truth comparison & Acceptance check UC5 \\
-NFR6 & Generator and trainer kept outside the build & The running system loads only the exported
-model \\
+NFR6 & Generator and trainer kept outside the build & Static check that no module under the source
+tree imports the training package \\
 \bottomrule
 \caption{Traceability from requirements to implementation and verification.}
 \end{longtable}
