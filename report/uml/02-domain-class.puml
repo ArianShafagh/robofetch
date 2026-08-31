@@ -14,7 +14,6 @@ skinparam class {
   ArrowColor #34495E
 }
 
-title RoboFetch Domain Model (runtime classes)
 
 package "robofetch_core (robot logic)" #F2F8F3 {
 

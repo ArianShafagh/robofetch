@@ -23,7 +23,6 @@ skinparam class {
 }
 hide circle
 
-title RoboFetch Database Schema (UML class view)
 
 ' ------------------------------------------------ warehouse layout
 package "Warehouse layout" #F4F7FB {

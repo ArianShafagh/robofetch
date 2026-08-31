@@ -16,7 +16,6 @@ skinparam artifact {
   BorderColor #7F8C8D
 }
 
-title RoboFetch Deployment
 
 node "Windows 11 host" #EEF3FA {
   artifact "Web browser\nlocalhost:8000" as BROWSER

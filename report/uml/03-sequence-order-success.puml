@@ -16,7 +16,6 @@ skinparam sequence {
   LifeLineBackgroundColor #EAF2FA
 }
 
-title Scenario 1: an order is placed and delivered
 
 actor Controller as C
 participant "Web tier" as API

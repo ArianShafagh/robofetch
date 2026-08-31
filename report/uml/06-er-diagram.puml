@@ -10,7 +10,6 @@ skinparam linetype ortho
 hide circle
 hide empty methods
 
-title RoboFetch Entity-Relationship Diagram
 
 entity "SHELVES" as shelves {
   * shelf_id : TEXT <<PK>>

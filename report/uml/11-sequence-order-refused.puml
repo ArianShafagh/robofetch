@@ -15,7 +15,6 @@ skinparam sequence {
   LifeLineBackgroundColor #EAF2FA
 }
 
-title Scenario 2: an order is refused on the robot's condition
 
 actor Controller as C
 participant "Web tier" as API
@@ -36,10 +35,5 @@ API -> AI ++ : predict  battery 18%, 4.5 kg, 8.6 m
 AI --> API -- : infeasible, confidence 54%
 API -> API : apply policy gates:\nstock, reserve, thermal, condition
 API --> C -- : REFUSED\n"predicted infeasible in the robot's\ncurrent condition (confidence 54%)"
-
-note over API, TM
-  Nothing is written to the orders table and nothing is published to the
-  task manager. The robot is never sent, so a refusal costs one preview.
-end note
 
 @enduml

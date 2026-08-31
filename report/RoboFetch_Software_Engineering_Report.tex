@@ -1668,7 +1668,10 @@ sequence; the steps are as follows.
   \item Publish a detach message for the parcel, then wait a settling interval.
   \item Read the state the \emph{joint itself} reports. The simulator's detachable joint publishes
         the literal strings \texttt{attached} and \texttt{detached} on its own topic; this is the
-        authority, not the fact that a detach message was sent.
+        authority, not the fact that a detach message was sent. That topic carries a message only
+        when the state \emph{changes}, so the subscription is created when the node starts rather
+        than when a release is requested: a subscriber created at the moment of the release would
+        miss the very transition it exists to observe.
   \item If the joint still reports \texttt{attached}, repeat from step 1, up to three attempts.
   \item If it still will not let go, the order fails, the queued orders are failed with a reason
         rather than left pending, and a recovery routine keeps retrying so that the robot heals

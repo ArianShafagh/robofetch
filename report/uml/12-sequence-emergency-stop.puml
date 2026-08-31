@@ -15,7 +15,6 @@ skinparam sequence {
   LifeLineBackgroundColor #EAF2FA
 }
 
-title Scenario 3: the emergency stop halts a running order
 
 actor Controller as C
 participant "Web tier" as API
@@ -46,11 +45,5 @@ deactivate CB
 == It does not latch ==
 C -> API ++ : POST /orders  the next order
 API --> C -- : accepted, ordinary order
-
-note over CB, GZ
-  Nothing is written to the database by the stop itself, so nothing
-  survives a logout. The robot stands where it stopped; going home
-  afterwards is a separate, deliberate press.
-end note
 
 @enduml

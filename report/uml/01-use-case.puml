@@ -15,7 +15,6 @@ skinparam usecase {
 }
 skinparam actorStyle awesome
 
-title RoboFetch Use Cases
 
 left to right direction
 

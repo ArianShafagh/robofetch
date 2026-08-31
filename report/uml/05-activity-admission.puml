@@ -17,7 +17,6 @@ skinparam activity {
   DiamondBorderColor #34495E
 }
 
-title Order Admission Workflow
 
 start
 :Receive product_id and delivery_id;

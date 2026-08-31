@@ -17,7 +17,6 @@ skinparam sequence {
   GroupBorderColor #7F8C8D
 }
 
-title C3: Physical Delivery Verification
 
 participant "Task manager" as TM
 participant "Gripper node" as GR
@@ -25,14 +24,6 @@ participant "DetachableJoint\n(Gazebo plugin)" as JOINT
 participant "Pose publisher\n(Gazebo)" as POSE
 participant "Web tier" as API
 database "SQLite" as DB
-
-note over JOINT
-  Publishes /gripper/<item>/state only
-  on a TRANSITION. The subscription is
-  created when the node starts, not when
-  a release is requested - a later
-  subscriber would miss the event.
-end note
 
 == Layer 1: did the gripper really let go? ==
 TM -> GR : release(model)
@@ -52,13 +43,7 @@ alt still attached after 3 attempts
   TM -> TM : _parcel_is_stuck
   TM -> API : status FAILED\n"could not put the parcel down"
   API -> DB : update order
-  note right of TM
-    Fail-stop, and the order ENDS here.
-    Queued orders are failed with a reason
-    rather than left pending, and recovery
-    keeps retrying so the robot heals itself
-    once the joint reports honestly again.
-  end note
+  note right of TM : the order ENDS here
   destroy GR
 else joint never reported at all
   GR --> TM : released, but UNVERIFIED\n(the evidence string says so)
@@ -72,11 +57,7 @@ POSE --> TM : /model/<parcel>/pose  (x, y)
 
 alt no pose has ever been received
   TM -> API : status FAILED\n"cannot confirm delivery: no pose"
-  note right of TM
-    Absence of evidence is a failure,
-    not a pass. This is the case the
-    original bug slipped through.
-  end note
+  note right of TM : no evidence = failure
   API -> DB : update order
 else pose available
   TM -> TM : gap = distance(pose, delivery bay)
@@ -89,12 +70,5 @@ else pose available
     API -> DB : update order + delivery history
   end
 end
-
-note over TM, POSE
-  The parcel's position in the physics engine decides the outcome.
-  Every command in the sequence above may have returned success and
-  the order still fails here - which is exactly what happened when
-  three deliveries were reported while no parcel had moved.
-end note
 
 @enduml

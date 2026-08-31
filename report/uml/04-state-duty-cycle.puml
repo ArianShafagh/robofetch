@@ -13,7 +13,6 @@ skinparam state {
   ArrowColor #34495E
 }
 
-title Robot Duty-Cycle State Machine
 
 [*] --> CHARGING : boots docked at the station
 
