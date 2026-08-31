@@ -1612,16 +1612,98 @@ the model and one without, and both produce decisions.
 
 \section{C3 - Physical Delivery Verification}
 \label{sec:c3}
-After the parcel is released, the task manager reads the parcel's position from the simulator and
-compares it with the coordinates of the delivery bay. If the distance exceeds the tolerance, the
-order is marked failed with an explanation, regardless of the fact that every command in the
-sequence returned success.
+The first two complex functionalities decide what the robot should do. This one decides what the
+system is allowed to \emph{believe} it has done, and it is the reason no false success has ever
+reached the database.
 
-The same principle is applied one level lower, to the grab. The gripper subscribes to the state
-reported by the detachable joint itself, which is either attached or detached, and uses that as the
-authority. A subtlety worth recording is that this state is published only when it changes, so the
-subscription must exist before the first transition occurs; it is therefore created when the node
-starts rather than when a grab is requested.
+\subsection{The Problem It Solves}
+A delivery robot is a distributed system whose components report on themselves. The navigation
+action returns \texttt{SUCCEEDED} when it thinks it has arrived. The gripper service returns success
+when it has published an attach message. The task manager marks an order complete when its own
+steps have run. Each of those is a statement about a \emph{command}, not about the warehouse.
+
+Early in the project the system reported three deliveries out of three while no parcel had moved at
+all. Every command in the chain had returned success and every status field agreed with every
+other. The fault was invisible precisely because the only evidence being consulted was produced by
+the same pipeline that had failed. Nothing in a system built this way detects that class of failure
+from the inside.
+
+C3 is the answer: before an order may be called complete, the outcome is checked against a source
+of truth that the command pipeline does not produce and cannot influence --- the physics engine
+itself.
+
+\subsection{The Algorithm}
+Verification runs at two levels, and both must pass. Figure~\ref{fig:seqverify} gives the full
+sequence; the steps are as follows.
+
+\textbf{Level 1 --- did the gripper really let go?}
+\begin{enumerate}[nosep]
+  \item Publish a detach message for the parcel, then wait a settling interval.
+  \item Read the state the \emph{joint itself} reports. The simulator's detachable joint publishes
+        the literal strings \texttt{attached} and \texttt{detached} on its own topic; this is the
+        authority, not the fact that a detach message was sent.
+  \item If the joint still reports \texttt{attached}, repeat from step 1, up to three attempts.
+  \item If it still will not let go, the order fails, the queued orders are failed with a reason
+        rather than left pending, and a recovery routine keeps retrying so that the robot heals
+        itself as soon as the joint reports honestly again.
+  \item If the joint has never reported at all, the release is treated as successful but the
+        recorded evidence \emph{says that it is unverified}, rather than presenting a guess as a
+        confirmation.
+\end{enumerate}
+
+\textbf{Level 2 --- is the parcel actually at the bay?}
+\begin{enumerate}[nosep, start=6]
+  \item Wait one second for the physics to settle, so that a parcel still in motion is not measured
+        mid-fall.
+  \item Read the parcel's position from the simulator.
+  \item If no position has ever been received, fail the order with ``cannot confirm delivery''.
+        Absence of evidence is treated as failure, not as permission to proceed --- this is the
+        exact gap the original fault escaped through.
+  \item Compute the distance between the parcel and the delivery bay.
+  \item If that distance exceeds the tolerance of 0.7 m, fail the order with the measured distance
+        in the message and send the robot home. The order is failed even though every command in it
+        succeeded.
+  \item Only if the distance is within tolerance is the order marked complete, and the measured
+        distance is recorded with it.
+\end{enumerate}
+
+\uploadedfigure{Figures/10-sequence-verification.png}{0.95\textwidth}
+{C3, physical delivery verification. Two independent sources of truth are consulted --- the joint's
+own reported state and the parcel's position in the physics engine --- and neither is produced by
+the command pipeline that asked for the work. Every path that does not end in confirmed evidence
+ends in a failed order.}{fig:seqverify}
+
+\subsection{Why This Is Complex Rather Than a Status Check}
+A status check asks a component whether it succeeded. This asks a different question of a different
+system, and then decides which answer wins.
+
+Three properties make it more than a comparison. First, it is a \emph{cross-validation between two
+independent sources of truth}: the command pipeline and the physics engine are separate systems,
+and the design consists of deciding which one is authoritative when they disagree. Second, the
+\emph{failure semantics are inverted} relative to ordinary error handling: the default outcome is
+failure, and success must be earned by positive evidence, which is why a missing measurement fails
+an order rather than passing it. Third, it required identifying what counts as admissible evidence
+at all --- the project moved from proximity, which passed trivially when nothing happened, to the
+joint's own reported state, which cannot.
+
+That last point is worth stating plainly, because it is where the engineering lies. An earlier
+version of the grab check measured the gap between parcel and robot, published an attach, and
+measured again, accepting the grab if the gap was unchanged. If the attach silently did nothing,
+neither body moved, the two measurements were identical, and the check passed. The check could not
+fail. Replacing it required recognising that a measurement taken from the wrong side of the failure
+tells you nothing, and finding a signal that is generated by the mechanism being tested rather than
+by the code testing it.
+
+\subsection{What It Costs and What It Buys}
+The cost is real: a delivery that physically succeeded can be failed by this check if the parcel
+lands outside the tolerance, and the robot is sent home with the order marked failed. That is
+deliberate. The alternative is a system whose records and whose warehouse disagree, and the project
+takes the position that a false success is worse than an honest failure.
+
+What it buys is that every completed order in the database is backed by a measurement taken from
+the simulator, and the acceptance suite can therefore assert physical outcomes rather than status
+fields. It is also what makes the reliability figures in Chapter~\ref{ch:testing} meaningful: a
+delivery counted as successful there is one where the parcel was measured at the bay.
 
 % ============================================================
 \chapter{The Machine Learning Component}
@@ -2325,6 +2407,7 @@ tree imports the training package \\
 \ref{fig:duty} & Duty states over one session \\
 \ref{fig:wear} & Mechanical condition over one session \\
 \ref{fig:activity} & Activity diagram of the admission workflow \\
+\ref{fig:seqverify} & Sequence diagram of physical delivery verification (C3) \\
 \ref{fig:mlpipeline} & Machine-learning pipeline \\
 \ref{fig:mlbalance} & Class balance of the training set \\
 \ref{fig:confusion} & Confusion matrix \\

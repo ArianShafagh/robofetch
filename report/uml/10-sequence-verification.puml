@@ -1,0 +1,100 @@
+' =====================================================================
+' RoboFetch - Sequence diagram: C3, physical delivery verification
+' The point of the diagram is that TWO independent sources of truth are
+' consulted - the joint's own reported state, and the parcel's position
+' in the physics engine - and that neither is the command pipeline that
+' asked for the work. Every path that does not end in confirmed evidence
+' ends in a FAILED order, never in a reported success.
+' =====================================================================
+@startuml
+skinparam backgroundColor White
+skinparam shadowing false
+skinparam sequence {
+  ArrowColor #34495E
+  LifeLineBorderColor #7F8C8D
+  ParticipantBorderColor #34495E
+  ParticipantBackgroundColor #FBFCFE
+  GroupBorderColor #7F8C8D
+}
+
+title C3: Physical Delivery Verification
+
+participant "Task manager" as TM
+participant "Gripper node" as GR
+participant "DetachableJoint\n(Gazebo plugin)" as JOINT
+participant "Pose publisher\n(Gazebo)" as POSE
+participant "Web tier" as API
+database "SQLite" as DB
+
+note over JOINT
+  Publishes /gripper/<item>/state only
+  on a TRANSITION. The subscription is
+  created when the node starts, not when
+  a release is requested - a later
+  subscriber would miss the event.
+end note
+
+== Layer 1: did the gripper really let go? ==
+TM -> GR : release(model)
+loop up to release_attempts (3)
+  GR -> JOINT : publish detach
+  GR -> GR : wait settle_time
+  JOINT --> GR : state "attached" / "detached"
+  alt joint reports "detached"
+    GR -> GR : released, record evidence
+  else joint still reports "attached"
+    GR -> GR : retry
+  end
+end
+
+alt still attached after 3 attempts
+  GR --> TM : not released
+  TM -> TM : _parcel_is_stuck
+  TM -> API : status FAILED\n"could not put the parcel down"
+  API -> DB : update order
+  note right of TM
+    Fail-stop, and the order ENDS here.
+    Queued orders are failed with a reason
+    rather than left pending, and recovery
+    keeps retrying so the robot heals itself
+    once the joint reports honestly again.
+  end note
+  destroy GR
+else joint never reported at all
+  GR --> TM : released, but UNVERIFIED\n(the evidence string says so)
+else joint reports "detached"
+  GR --> TM : released, verified
+end
+
+== Layer 2: is the parcel actually at the bay? ==
+TM -> TM : wait 1 s for the physics to settle
+POSE --> TM : /model/<parcel>/pose  (x, y)
+
+alt no pose has ever been received
+  TM -> API : status FAILED\n"cannot confirm delivery: no pose"
+  note right of TM
+    Absence of evidence is a failure,
+    not a pass. This is the case the
+    original bug slipped through.
+  end note
+  API -> DB : update order
+else pose available
+  TM -> TM : gap = distance(pose, delivery bay)
+  alt gap > delivery_tolerance (0.7 m)
+    TM -> API : status FAILED\n"ended <gap> m from the bay -\nit was never carried"
+    API -> DB : update order
+    TM -> TM : return to station
+  else gap within tolerance
+    TM -> API : status COMPLETED\n"delivered (<gap> m from target)"
+    API -> DB : update order + delivery history
+  end
+end
+
+note over TM, POSE
+  The parcel's position in the physics engine decides the outcome.
+  Every command in the sequence above may have returned success and
+  the order still fails here - which is exactly what happened when
+  three deliveries were reported while no parcel had moved.
+end note
+
+@enduml
