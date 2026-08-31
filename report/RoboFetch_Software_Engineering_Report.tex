@@ -1878,7 +1878,9 @@ two classes is not a perfectly sharp line, which would otherwise let the classif
 rule.
 
 \uploadedfigure{Figures/fig-ml-class-balance.png}{0.62\textwidth}
-{Class balance of the generated training set.}{fig:mlbalance}
+{Class balance of the generated training set. The set holds 4000 hypothetical orders, each
+labelled by running the deterministic model forward to see whether the robot could in fact
+have completed it.}{fig:mlbalance}
 
 \section{Avoiding Information Leakage}
 The generated file contains columns that the model is deliberately \emph{not} given, in particular
@@ -1900,7 +1902,7 @@ classifier trained on a set where almost everything succeeds learns to say yes, 
 nothing to a workflow whose entire purpose is to be able to say no.
 
 \uploadedfigure{Figures/fig-ml-confusion.png}{0.60\textwidth}
-{Confusion matrix on the held-out test split.}{fig:confusion}
+{Confusion matrix on the held-out test split, the 1000 runs of the 4000 not used for training.}{fig:confusion}
 
 \uploadedfigure{Figures/fig-ml-importance.png}{0.82\textwidth}
 {Relative importance of the five features.}{fig:importance}

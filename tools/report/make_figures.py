@@ -98,7 +98,6 @@ def fig_battery_session(rows):
 
     ax.set_xlabel("elapsed time (minutes)")
     ax.set_ylabel("charge (%)")
-    ax.set_title("Battery over one session, measured from the run log")
     ax.set_ylim(0, 105)
     ax.legend(loc="lower left", ncol=3, fontsize=8)
     save(fig, "fig-battery-session.png")
@@ -126,7 +125,6 @@ def fig_temperature_session(rows):
 
     ax.set_xlabel("elapsed time (minutes)")
     ax.set_ylabel("temperature (C)")
-    ax.set_title("Motor temperature crossing the limit and entering cooldown")
     ax.legend(loc="lower right", ncol=2, fontsize=8)
     save(fig, "fig-temperature-session.png")
 
@@ -144,7 +142,6 @@ def fig_duty_states(rows):
     ax.set_yticks(range(len(order)))
     ax.set_yticklabels(order)
     ax.set_xlabel("elapsed time (minutes)")
-    ax.set_title("Duty-cycle states over the same session")
     ax.grid(axis="y", alpha=0)
     save(fig, "fig-duty-states.png")
 
@@ -155,7 +152,6 @@ def fig_condition_wear(rows):
             color=PURPLE, lw=1.8)
     ax.set_xlabel("elapsed time (minutes)")
     ax.set_ylabel("condition (%)")
-    ax.set_title("Mechanical condition degrading with energy throughput and heat")
     total = rows[0]["condition_percent"] - rows[-1]["condition_percent"]
     ax.annotate(f"{total:.2f} percentage points lost\nover {rows[-1]['t'] / 60:.0f} minutes",
                 xy=(rows[-1]["t"] / 60, rows[-1]["condition_percent"]),
@@ -182,7 +178,6 @@ def fig_payload_energy():
         ax.text(x, value, f"{value:.3f}", ha="center", va="bottom", fontsize=8)
     ax.set_xlabel("payload (kg) - the six catalogue weights")
     ax.set_ylabel("energy per metre (Wh/m)")
-    ax.set_title("Heavier products cost more energy for the same distance")
     save(fig, "fig-payload-energy.png")
 
 
@@ -200,7 +195,6 @@ def fig_delivery_accuracy():
                label=f"mean {np.mean(measured):.2f} m")
     ax.set_xlabel("delivery (in the order measured)")
     ax.set_ylabel("distance from the bay (m)")
-    ax.set_title("Delivery accuracy, verified against simulator ground truth")
     ax.set_ylim(0, 0.85)
     ax.legend(fontsize=8)
     save(fig, "fig-delivery-accuracy.png")
@@ -218,7 +212,6 @@ def fig_predicted_vs_actual():
     ax.set_ylim(*limits)
     ax.set_xlabel("predicted route length (m)")
     ax.set_ylabel("measured route length (m)")
-    ax.set_title("Predicted vs measured\nroute length")
     ax.legend(fontsize=8, loc="upper left")
     ax.set_aspect("equal")
     save(fig, "fig-predicted-vs-actual.png")
@@ -235,7 +228,6 @@ def fig_category_balance():
         ax.text(bar.get_x() + bar.get_width() / 2, value, str(value),
                 ha="center", va="bottom", fontweight="bold")
     ax.set_ylabel("number of functionalities")
-    ax.set_title("Balance of functionality across the three required categories")
     ax.set_ylim(0, 11)
     save(fig, "fig-category-balance.png")
 
@@ -251,7 +243,6 @@ def fig_test_composition():
         ax.text(bar.get_x() + bar.get_width() / 2, value, str(value),
                 ha="center", va="bottom", fontweight="bold")
     ax.set_ylabel("tests")
-    ax.set_title(f"Automated test suite: {sum(counts)} tests, no simulator required")
     # The gate test is parameterised over the eight gated pages, so 16 tests run as 23 cases.
     ax.set_ylim(0, 7)
     save(fig, "fig-test-composition.png")
@@ -270,8 +261,6 @@ def fig_acceptance_results():
     ax.set_yticks([0, 1])
     ax.set_yticklabels(["fail", "pass"])
     ax.set_ylim(0, 1.35)
-    ax.set_title(f"Acceptance checks against the live system: "
-                 f"{sum(passed)}/{len(passed)} passed")
     save(fig, "fig-acceptance-results.png")
 
 
@@ -292,7 +281,6 @@ def fig_test_pyramid():
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 3.05)
     ax.axis("off")
-    ax.set_title("Three-layer test strategy")
     save(fig, "fig-test-pyramid.png")
 
 
@@ -308,7 +296,6 @@ def fig_ml_class_balance():
         ax.text(x, value, f"{value}\n({value / len(rows):.0%})", ha="center",
                 va="bottom", fontsize=8.5)
     ax.set_ylabel("training examples")
-    ax.set_title(f"Class balance of the {len(rows)}-run training set")
     ax.set_ylim(0, feasible * 1.25)
     save(fig, "fig-ml-class-balance.png")
 
@@ -325,7 +312,6 @@ def fig_ml_confusion():
     ax.set_xticks([0, 1]); ax.set_xticklabels(["refuse", "accept"])
     ax.set_yticks([0, 1]); ax.set_yticklabels(["refuse", "accept"])
     ax.set_xlabel("predicted"); ax.set_ylabel("actual")
-    ax.set_title("Confusion matrix on the\nheld-out test split (1000 runs)")
     ax.grid(False)
     save(fig, "fig-ml-confusion.png")
 
@@ -340,7 +326,6 @@ def fig_ml_importance():
         ax.text(value + 0.008, index, f"{value:.3f}", va="center", fontsize=8.5)
     ax.set_xlabel("relative importance")
     ax.set_xlim(0, 0.78)
-    ax.set_title("What the classifier keys on")
     save(fig, "fig-ml-importance.png")
 
 
@@ -366,7 +351,6 @@ def fig_ml_pipeline():
             ha="center", fontsize=7.8, color=GREY)
     ax.set_xlim(0.2, 9.2); ax.set_ylim(0.2, 1.9)
     ax.axis("off")
-    ax.set_title("Machine-learning pipeline")
     save(fig, "fig-ml-pipeline.png")
 
 
@@ -409,7 +393,6 @@ def fig_warehouse_layout():
     ax.set_xlim(-4.6, 4.6); ax.set_ylim(-3.6, 3.5)
     ax.set_xlabel("x (m)"); ax.set_ylabel("y (m)")
     ax.set_aspect("equal")
-    ax.set_title("Warehouse layout, drawn to scale from warehouse.sdf")
     ax.legend(loc="upper center", ncol=2, fontsize=8)
     save(fig, "fig-warehouse-layout.png")
 
@@ -435,7 +418,6 @@ def fig_layered_architecture():
             ha="center", fontsize=8, color=GREY)
     ax.set_xlim(-0.06, 1.0); ax.set_ylim(-0.12, 4.7)
     ax.axis("off")
-    ax.set_title("Layered architecture")
     save(fig, "fig-layered-architecture.png")
 
 
@@ -474,7 +456,6 @@ def fig_dependency_direction():
             ha="center", fontsize=8.5, color=GREEN)
     ax.set_xlim(0.0, 8.0); ax.set_ylim(-0.5, 3.3)
     ax.axis("off")
-    ax.set_title("Dependency direction: the decision logic depends on nothing")
     save(fig, "fig-dependency-direction.png")
 
 
@@ -539,7 +520,6 @@ def fig_incremental():
     ax.set_xlim(-0.35, 10.1)
     ax.set_ylim(-1.00, 3.15)
     ax.axis("off")
-    ax.set_title("The incremental model as followed: each increment runs the full phase sequence")
     save(fig, "fig-incremental-model.png")
 
 
