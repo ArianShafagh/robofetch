@@ -650,8 +650,9 @@ visible in one line.
 
 \textbf{System requirements} state what the software must do in order to satisfy a user
 requirement. They are the specification the implementation is checked against, and each one names
-the user requirement it refines. They are divided into functional requirements, which describe
-behaviour, and non-functional requirements, which constrain how that behaviour is delivered.
+the user requirement it refines. They are given in Section~\ref{sec:sysreq}, divided into
+functional requirements, which describe behaviour, and non-functional requirements, which constrain
+how that behaviour is delivered.
 
 Every requirement carries a unique identifier that is used unchanged throughout this report, in the
 traceability matrix in Appendix~\ref{app:traceability}, and in the acceptance suite itself, where
@@ -694,7 +695,19 @@ them.}
 \label{tab:ur}
 \end{longtable}
 
-\section{Functional Requirements}
+\section{System Requirements}
+\label{sec:sysreq}
+The system requirements below refine the user requirements of the previous section into statements
+about the software itself. Where a user requirement says what the warehouse needs, a system
+requirement says what the software must do to provide it, in terms precise enough to be built
+against and checked.
+
+They are given in two groups. The \emph{functional} requirements describe what the system does;
+the \emph{non-functional} requirements constrain how it does it. Every one of them names its
+parent user requirement, so the chain from a need in the warehouse to a line in the acceptance
+suite is unbroken in both directions.
+
+\subsection{Functional System Requirements}
 Each functional requirement names the user requirement it serves and the criterion by which it is
 accepted. The criterion is what makes the requirement testable: it states the observable outcome
 that decides whether the requirement is met, and it is the same condition the corresponding check
@@ -775,7 +788,7 @@ is accepted.}
 \label{tab:fr}
 \end{longtable}
 
-\section{Non-Functional Requirements}
+\subsection{Non-Functional System Requirements}
 A non-functional requirement that cannot be measured cannot be enforced, so each one below states
 the quantity, the method of measurement and the threshold that decides it. Writing these criteria
 was not a formality: doing so revealed that NFR4 was not being met, which is recorded in
