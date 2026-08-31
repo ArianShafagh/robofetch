@@ -573,8 +573,9 @@ useful one, and this project is an instance of it.
 Maintenance is therefore drawn in Figure~\ref{fig:incremental} as a band beginning at the first
 delivery and running past the last increment, rather than as a box at the end of a row.
 
-\subsection*{The four kinds, and where each occurred}
-All four categories of maintenance occurred, and each is traceable to specific work.
+\subsection*{The three kinds, and where each occurred}
+Maintenance is classified here as corrective, adaptive and perfective, following Swanson's
+categories. All three occurred, and each is traceable to specific work.
 
 \begin{longtable}{@{}p{0.16\textwidth}p{0.78\textwidth}@{}}
 \toprule
@@ -594,20 +595,20 @@ The simulator's predecessor reached end of life and its attachment mechanism no 
 the supported platform, so the gripper was rebuilt on the detachable joint the current simulator
 provides. \\
 Perfective &
-Improving what already worked. The battery capacity was retuned twice so that admission control had
-something real to refuse, each change requiring the classifier to be retrained because the training
-label depends on it. The controller's sampling parameters were reduced when they starved the control
-loop, and the pose publication rate was lowered when it saturated a node's executor. The templates
-were reorganised and the test suite reduced to a representative set. \\
-Preventive &
-Reducing the likelihood of future faults rather than fixing a present one. The stop script gained a
-self-audit that names any running process it would fail to kill, so that the next omission is
-reported rather than discovered. A test fails the build if guidance text reappears on the web pages,
-enforcing a rule that would otherwise erode. The acceptance table in this report is generated from
-the recorded results rather than transcribed, after a transcribed copy was found to disagree with
-the figure printed beside it. \\
+Improving what already worked, in behaviour or in maintainability, without any fault having been
+reported. The battery capacity was retuned twice so that admission control had something real to
+refuse, each change requiring the classifier to be retrained because the training label depends on
+it. The controller's sampling parameters were reduced when they starved the control loop, and the
+pose publication rate was lowered when it saturated a node's executor. The templates were
+reorganised and the test suite reduced to a representative set. Several changes were made to reduce
+the chance of a fault rather than to remove one: the stop script gained a self-audit that names any
+running process it would fail to kill, so the next omission is reported rather than discovered; a
+test fails the build if guidance text reappears on the web pages, enforcing a rule that would
+otherwise erode; and the acceptance table in this report is generated from the recorded results
+rather than transcribed, after a transcribed copy was found to disagree with the figure printed
+beside it. \\
 \bottomrule
-\caption{The four kinds of maintenance and where each occurred.}
+\caption{The three kinds of maintenance and where each occurred.}
 \label{tab:maintenance}
 \end{longtable}
 
