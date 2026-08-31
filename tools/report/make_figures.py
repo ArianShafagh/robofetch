@@ -517,8 +517,27 @@ def fig_incremental():
         ax.text(end_x + 0.34, y + box_h / 2, "delivered\nand verified", fontsize=7.4,
                 color=colour, va="center", style="italic")
 
-    ax.set_xlim(-0.35, 9.6)
-    ax.set_ylim(-0.35, 3.15)
+    # Maintenance is NOT a box at the end of a row. The moment increment 1 is delivered, every
+    # later change to it is maintenance, so it runs as a band from the first delivery onwards and
+    # does not stop at the last increment. Drawing it as a phase box would say the opposite.
+    first_delivery_x = len(phases) * (box_w + gap) + 0.24
+    band_y, band_h, band_end = -0.78, 0.36, 9.20
+    ax.add_patch(Rectangle((first_delivery_x, band_y), band_end - first_delivery_x, band_h,
+                           facecolor=GREY, alpha=0.16, edgecolor=GREY, lw=1.1))
+    ax.text(first_delivery_x + 0.22, band_y + band_h / 2, "Maintenance",
+            fontsize=8.4, color="#3E4B4A", va="center", style="italic")
+    ax.add_patch(FancyArrowPatch((band_end, band_y + band_h / 2),
+                                 (band_end + 0.45, band_y + band_h / 2),
+                                 arrowstyle="-|>", mutation_scale=10, color=GREY))
+    # a short tick, not a full riser: it marks where maintenance starts without
+    # drawing a line through the increments above it
+    ax.plot([first_delivery_x, first_delivery_x], [band_y + band_h, band_y + band_h + 0.22],
+            ls=":", lw=1.1, color=GREY)
+    ax.text(first_delivery_x, band_y + band_h + 0.30, "begins at the first delivery",
+            fontsize=7.2, color=GREY, ha="left", va="bottom")
+
+    ax.set_xlim(-0.35, 10.1)
+    ax.set_ylim(-1.00, 3.15)
     ax.axis("off")
     ax.set_title("The incremental model as followed: each increment runs the full phase sequence")
     save(fig, "fig-incremental-model.png")

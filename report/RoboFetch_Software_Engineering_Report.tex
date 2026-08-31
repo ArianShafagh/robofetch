@@ -420,7 +420,9 @@ record.
 \uploadedfigure{Figures/fig-incremental-model.png}{0.95\textwidth}
 {The process as followed. Each increment runs the full sequence of phases and ends in a delivered,
 verified subset of the system; the specification is fixed for the increment being built, not for
-the project as a whole.}{fig:incremental}
+the project as a whole. Maintenance is drawn as a band rather than as a phase box, because it is
+not bounded by an increment: it begins the moment the first increment is delivered and continues
+across all of them.}{fig:incremental}
 
 \section{Phases and Their Deliverables}
 The table below gives the phases and what each produced. Every phase runs inside \textbf{every}
@@ -445,8 +447,11 @@ pipeline, delivered across the three increments of Section~\ref{sec:increments}.
 Testing & The automated test suites, and the acceptance suite that runs against the live system.
 Each increment was verified against the simulator before the next was specified; the measured
 results are reported in Chapter~\ref{ch:testing}. \\
-Deployment and maintenance & The launch configuration, the run instructions, the known limitations
-and the handover documentation. \\
+Deployment & The launch configuration and the run instructions. Runs once per increment: each one
+ends in a system that starts from a single command and is verified. \\
+Maintenance & The known limitations, the problem log and the handover documentation. Unlike the
+others this is \emph{not} bounded by an increment; it begins at the first delivery and continues
+across every increment after it. See Section~\ref{sec:maintenance}. \\
 \bottomrule
 \caption{Phases of the process and what each produced.}
 \label{tab:phases}
@@ -550,6 +555,77 @@ return, and the reservation both held and released.
 Each is a page, a queue entry or a database query fitted to machinery that already existed, which
 is why the work was added to the existing architecture rather than prompting a new one.
 
+
+\section{Maintenance}
+\label{sec:maintenance}
+Maintenance is the phase that does not fit inside an increment, and saying where it belongs is part
+of describing this process honestly.
+
+In a single-delivery process the answer is simple: maintenance is what happens after the one
+delivery. Here there are three deliveries, and the moment the first increment was delivered, every
+subsequent change to it became maintenance by definition. The second increment did not only add
+code to the first: it \emph{modified delivered code}, removing the scheduler, replacing the retry
+state machine, changing the order of service to arrival order and rebuilding the interface. That
+work is maintenance carried out as part of the next increment. Sommerville makes the general point
+that in iterative processes the distinction between development and maintenance stops being a
+useful one, and this project is an instance of it.
+
+Maintenance is therefore drawn in Figure~\ref{fig:incremental} as a band beginning at the first
+delivery and running past the last increment, rather than as a box at the end of a row.
+
+\subsection*{The four kinds, and where each occurred}
+All four categories of maintenance occurred, and each is traceable to specific work.
+
+\begin{longtable}{@{}p{0.16\textwidth}p{0.78\textwidth}@{}}
+\toprule
+\textbf{Kind} & \textbf{Where it occurred in this project} \\
+\midrule
+\endhead
+Corrective &
+Repairing faults in delivered behaviour. A stale web process kept answering on the same port while
+the real one failed to start, so orders were accepted and never executed. The stop script did not
+match the condition monitor's process name, so five of them accumulated and the web tier read
+telemetry from several stale robots at once. An acceptance check counted a refused order as one
+that had started, and so reported a scheduling fault that did not exist. \\
+Adaptive &
+Adjusting to a changed environment rather than to a changed requirement. The web framework
+deprecated the startup-event interface the application used, which was migrated to its replacement.
+The simulator's predecessor reached end of life and its attachment mechanism no longer existed on
+the supported platform, so the gripper was rebuilt on the detachable joint the current simulator
+provides. \\
+Perfective &
+Improving what already worked. The battery capacity was retuned twice so that admission control had
+something real to refuse, each change requiring the classifier to be retrained because the training
+label depends on it. The controller's sampling parameters were reduced when they starved the control
+loop, and the pose publication rate was lowered when it saturated a node's executor. The templates
+were reorganised and the test suite reduced to a representative set. \\
+Preventive &
+Reducing the likelihood of future faults rather than fixing a present one. The stop script gained a
+self-audit that names any running process it would fail to kill, so that the next omission is
+reported rather than discovered. A test fails the build if guidance text reappears on the web pages,
+enforcing a rule that would otherwise erode. The acceptance table in this report is generated from
+the recorded results rather than transcribed, after a transcribed copy was found to disagree with
+the figure printed beside it. \\
+\bottomrule
+\caption{The four kinds of maintenance and where each occurred.}
+\label{tab:maintenance}
+\end{longtable}
+
+\subsection*{What makes the maintenance possible}
+Two things carry most of the weight, and both were built during the increments rather than added
+afterwards.
+
+The first is the regression suite. Because every increment ended in a verified system, a change
+made later can be checked against the same criteria that closed the increment it touches. Nothing
+in the maintenance record above was accepted on the strength of an argument that it ought to work.
+
+The second is the record of what was tried and rejected. Several of the corrections above were
+first attempted in ways that failed, and those attempts are documented alongside the fixes, so that
+a later reader does not repeat them. Four attempts to improve delivery accuracy were reverted before
+the cause was correctly identified at the grab rather than at the release; the dead helper from one
+of them is still in the source, deliberately unused, with a comment explaining why calling it makes
+the problem worse. A maintenance record that lists only what worked is of limited use to whoever
+maintains the system next.
 
 \section{Traceability}
 Every requirement in Chapter~\ref{ch:requirements} maps forward to a design element and to at
