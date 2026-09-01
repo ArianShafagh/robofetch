@@ -1336,8 +1336,10 @@ they cover the three outcomes an order can have: it is delivered, it is never st
 stopped.
 
 \uploadedfigure{Figures/03-sequence-order-success.png}{0.98\textwidth}
-{Scenario 1: a controller places an order and it is delivered. The decision is taken before
-anything is stored, and the outcome is decided by reading the parcel's real position rather than by
+{Scenario 1: a controller places an order and it is delivered. The task manager sends a
+destination, not a velocity: the navigation stack decides how to get there and drives the robot
+itself, which is why it is the navigation stack and not the task manager that writes to the
+velocity topic. The decision is taken before anything is stored, and the outcome is decided by reading the parcel's real position rather than by
 the fact that every command returned success. The figures are those of order 1 of the recorded
 acceptance run.}{fig:seqsuccess}
 
@@ -1350,9 +1352,12 @@ table and the robot is never sent, so a refusal costs one preview.}{fig:seqrefus
 {Scenario 3: the operator halts a running order. Inside the task manager the stop is handled on the
 subscription callback rather than on the worker thread, because the worker is blocked waiting on
 the navigation result at exactly the moment the button is pressed; the diagram shows the component
-as one lifeline and leaves that division to the text. The web tier answers as soon as the stop has
-been published, before the robot has physically halted, because an emergency control that blocks
-until the brake has taken effect is worse than one that returns at once. Nothing is written by the
+as one lifeline and leaves that division to the text. Two publishers write to the same velocity topic, which is why the halt is
+republished rather than sent once: the navigation stack is already streaming velocity commands at
+ten hertz, and a single zero would be overwritten by the next one before the cancellation had taken
+effect. The web tier answers as soon as the stop has been published, before the robot has
+physically halted, because an emergency control that blocks until the wheels have stopped is worse
+than one that returns at once. Nothing is written by the
 stop itself, so it does not survive a logout and the next order is an ordinary
 one.}{fig:seqestop}
 

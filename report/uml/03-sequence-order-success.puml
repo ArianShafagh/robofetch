@@ -27,7 +27,7 @@ participant "AI service" as AI
 participant "Task manager" as TM
 participant "Nav2" as NAV
 participant "Gripper" as GR
-participant "Pose publisher\n(Gazebo)" as GZ
+participant "Gazebo" as GZ
 
 == Decide, before anything is stored ==
 C -> API ++ : POST /preview  SKU-1001 -> delivery_1
@@ -44,11 +44,13 @@ API ->> TM ++ : publish /orders/new
 API --> C -- : order 1, pending
 
 == Execute ==
-TM -> NAV ++ : navigate to the pick point
+TM ->> NAV ++ : navigate to the pick point
+NAV ->> GZ : /cmd_vel, 10 Hz until it arrives
 NAV --> TM -- : SUCCEEDED
 TM -> GR ++ : grab(parcel_1)
 GR --> TM -- : joint reports "attached"
-TM -> NAV ++ : navigate to delivery_1
+TM ->> NAV ++ : navigate to delivery_1
+NAV ->> GZ : /cmd_vel, 10 Hz until it arrives
 NAV --> TM -- : SUCCEEDED
 TM -> GR ++ : release(parcel_1)
 GR --> TM -- : joint reports "detached"
