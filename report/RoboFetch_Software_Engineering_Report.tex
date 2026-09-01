@@ -1347,7 +1347,9 @@ acceptance run.}{fig:seqsuccess}
 
 \uploadedfigure{Figures/11-sequence-order-refused.png}{0.92\textwidth}
 {Scenario 2: the same request is refused because the robot could not return to its station
-afterwards. The gate order is the subject of this diagram: the reserve check is gate 2, it returns
+afterwards. The battery reads 80\%, which sounds ample until the return leg is costed: the heaviest
+product over this route needs 69.6 percentage points of an 11 Wh pack, which would leave 10\% -- below
+the 15\% that must remain. The gate order is the subject of this diagram: the reserve check is gate 2, it returns
 immediately, and gates 3 to 5 never run -- so the \emph{classifier is not consulted at all}, and
 its lifeline stays empty. That is the strongest form of the argument in Section~\ref{sec:c2}: the
 model can refuse an order the physics allowed, but it is never in a position to approve one the

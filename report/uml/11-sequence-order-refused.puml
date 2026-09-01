@@ -31,15 +31,15 @@ participant "Task manager" as TM
 == Cost the job ==
 C -> API ++ : POST /preview  SKU-3001 -> delivery_1
 API -> DB ++ : product, pick point, bay
-DB --> API -- : 4.5 kg, route 8.6 m including the way home
+DB --> API -- : 4.5 kg, pick (2.75, -1.5), bay (-3.0, -2.2)
 API -> DB ++ : live robot condition
-DB --> API -- : battery 18%, 41 C, condition 99%
-API -> API : project past work already accepted,\nthen cost the three legs
+DB --> API -- : battery 80%, 41 C, condition 99%
+API -> API : project past work already accepted, then cost\nthree legs: 8.63 m loaded + 3.00 m home\n= 6.54 + 1.12 Wh = 69.6 points of an 11 Wh pack
 
 == Run the gates in order ==
 API -> API : gate 1  stock: 1 in stock, passes
-API -> API : gate 2  reserve: battery would fall to 4%,\nbelow the 15% needed to reach the station
-API --> C -- : REFUSED\n"battery would fall to 4%, below the 15%\nreserve needed to return to the station"
+API -> API : gate 2  reserve: 80 - 69.6 = 10%,\nbelow the 15% that must remain
+API --> C -- : REFUSED\n"battery would fall to 10%, below the 15%\nreserve needed to return to the station"
 
 note over AI, TM
   Gate 2 returns immediately, so gates 3 to 5 never run: the classifier is
