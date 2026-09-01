@@ -1,84 +1,117 @@
 ' =====================================================================
-' RoboFetch - Component diagram
-' Shows the nine packages, their interfaces and the direction of every
-' dependency. Dependencies point downward: nothing in a lower layer
-' knows about a higher one.
+' RoboFetch - Component diagram (UML 2 component notation)
+'
+' Notation, and what each part means here:
+'   <<component>>     a replaceable unit with a defined boundary
+'   port              a named interaction point ON that boundary
+'   -- IFoo           PROVIDED interface (the ball)
+'   --( IFoo          REQUIRED interface (the socket)
+'   ball into socket  ASSEMBLY connector: one component's provided
+'                     interface satisfies another's requirement
+'   port -- [Part]    DELEGATION connector: traffic arriving at the
+'                     boundary is handed to an internal part
+'
+' Only the Web Tier is opened up, to show delegation once: nothing
+' outside it addresses db.py or admission.py directly. The other
+' components are shown closed, which is the point of a component -
+' you depend on its interfaces, not on its insides.
 ' =====================================================================
 @startuml
 skinparam backgroundColor White
 skinparam shadowing false
+skinparam componentStyle uml2
+skinparam linetype ortho
+skinparam nodesep 28
+skinparam ranksep 34
 skinparam component {
   BackgroundColor #FBFCFE
   BorderColor #34495E
   ArrowColor #34495E
 }
-skinparam packageStyle rectangle
-
-
-package "Presentation" #EEF3FA {
-  [Browser] as BR
-  [robofetch_web\nJinja2 templates + CSS] as WEB
+skinparam interface {
+  BackgroundColor #FBFCFE
+  BorderColor #34495E
 }
 
-package "Application" #F4F7FB {
-  [robofetch_bridge\nFastAPI app] as APP
-  [admission.py\ncost + policy gates] as ADM
-  [db.py\nrepository] as DB
-  [predictor.py\nAI client] as PRED
-  [ros_link.py\nrclpy bridge] as LINK
-  database "robofetch.db" as SQLITE
+actor "Controller /\nadministrator" as USER
+
+interface "IWebUI" as IWEBUI
+USER -down-( IWEBUI
+
+component "Web Tier  <<robofetch_bridge>>" as WEB {
+  portin "http" as p_http
+  port "ai" as p_ai
+  portout "ros" as p_ros
+  [app.py\nroutes, sessions] as APP
+  [admission.py\ncost + 5 gates] as ADM
+  [db.py\nrepository] as DBR
+  [predictor.py] as PRED
+  [ros_link.py] as LINK
+  p_http -down- APP
+  p_ai -up- PRED
+  p_ros -left- LINK
+  APP -down-> ADM
+  APP -down-> DBR
+  APP -down-> LINK
+  ADM -right-> PRED
 }
+IWEBUI -down- WEB
 
-package "AI service" #FBF6F0 {
-  [robofetch_ai\nfeasibility classifier] as AI
-  artifact "model.joblib" as MODEL
+database "robofetch.db" as SQLITE
+DBR -down-> SQLITE
+
+' ---------------------------------------------------------- the AI process
+interface "IPredict" as IPREDICT
+p_ai -right-( IPREDICT
+component "AI Service\n<<robofetch_ai>>" as AI {
+  portin "predict" as p_pred
 }
+IPREDICT -right- p_pred
 
-package "Robot logic" #F2F8F3 {
-  [task_manager] as TM
-  [robot_state_node\ncondition model] as RSN
-  [gripper_node] as GN
-  [robot_model.py\nshared physics] as RM
-  [robofetch_interfaces\nGrab.srv] as IFACE
+' ------------------------------------------------- web tier <-> robot nodes
+interface "IOrderQueue" as IQUEUE
+interface "IEstop" as IESTOP
+interface "IOrderStatus" as ISTATUS
+interface "ITelemetry" as ITELEM
+
+p_ros -down-( IQUEUE
+p_ros -down-( IESTOP
+p_ros -down- ISTATUS
+p_ros -down-( ITELEM
+
+component "Task Manager\n<<robofetch_core>>" as TM {
+  portin "orders" as p_orders
+  portout "actuate" as p_act
 }
+component "Condition Monitor\n<<robofetch_core>>" as RSN
 
-package "Robot platform (third party)" #F7F2F7 {
-  [Nav2] as NAV
-  [Gazebo Harmonic] as GZ
-  [ros_gz_bridge] as BRIDGE
-  [robofetch_description\nURDF] as URDF
-  [robofetch_gazebo\nworld + map] as WORLD
-}
+IQUEUE -down- p_orders
+IESTOP -down- p_orders
+ISTATUS -down-( p_orders
+ITELEM -down- RSN
 
-BR --> WEB : HTTP form posts
-WEB --> APP : rendered by
-APP --> ADM
-APP --> DB
-APP --> LINK
-ADM --> PRED
-ADM ..> RM : imports
-DB --> SQLITE
-PRED --> AI : HTTP :8001
-AI --> MODEL
+' ------------------------------------------------- task manager -> actuators
+interface "IGrab" as IGRAB
+interface "INavigate" as INAV
+p_act -down-( IGRAB
+p_act -down-( INAV
 
-LINK --> TM : /orders/new
-TM --> LINK : /orders/status
-RSN --> LINK : /robot/telemetry
-RSN ..> RM : imports
-TM --> GN : Grab service
-GN ..> IFACE
-TM --> NAV : NavigateToPose
-GN --> BRIDGE : attach / detach / state
-NAV --> BRIDGE : scan, odom, cmd_vel, tf
-BRIDGE --> GZ
-URDF --> GZ
-WORLD --> GZ
+component "Gripper Node\n<<robofetch_core>>" as GN
+component "Nav2\n<<third party>>" as NAV
 
-note right of RM
-  Imported by the robot node, the web
-  tier and the disposable data generator,
-  so there is exactly one definition of
-  the physics in the whole system.
-end note
+IGRAB -down- GN
+INAV -down- NAV
+
+' ------------------------------------------------------------- the simulator
+interface "ISimulation" as ISIM
+GN -down-( ISIM
+NAV -down-( ISIM
+component "Gazebo Harmonic\n<<third party>>" as GZ
+ISIM -down- GZ
+
+' --------------------------------------------------------- shared dependency
+component "robot_model.py\n<<shared physics>>" as RM
+ADM ..> RM : <<use>>
+RSN ..> RM : <<use>>
 
 @enduml

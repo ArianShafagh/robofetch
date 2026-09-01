@@ -1005,7 +1005,16 @@ Figure~\ref{fig:component} shows the components, their interfaces and the direct
 dependency. Table~\ref{tab:components} states the single responsibility of each package.
 
 \uploadedfigure{Figures/08-component.png}{0.98\textwidth}
-{Component diagram showing the nine packages and their interfaces.}{fig:component}
+{Component diagram in UML~2 notation. Each component carries \emph{ports} on its boundary, and
+every dependency is drawn as an \emph{assembly connector}: a provided interface (the ball) meeting
+a required one (the socket). The Web Tier is the only component opened up, so that
+\emph{delegation connectors} are visible once -- traffic arriving at a port is handed to an
+internal part, and nothing outside addresses \texttt{db.py} or \texttt{admission.py} directly. The
+others are drawn closed, which is the point of a component: what depends on it depends on its
+interfaces, not on its insides. \texttt{robot\_model.py} is the exception that proves the rule --
+it offers no interface at all and is reached by a \texttt{<<use>>} dependency, because it is a
+library of equations shared by the robot and the web tier rather than a service either of them
+calls.}{fig:component}
 
 \begin{longtable}{@{}p{0.26\textwidth}p{0.68\textwidth}@{}}
 \toprule
