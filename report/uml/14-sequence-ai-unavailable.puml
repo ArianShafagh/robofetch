@@ -1,0 +1,56 @@
+' =====================================================================
+' RoboFetch - A7: the prediction service cannot be reached, and the
+' system decides anyway. This is NFR2 demonstrated rather than claimed.
+'
+' Predictor.__call__ returns None on timeout, connection failure, a
+' missing model or a malformed reply. decide() then leaves decided_by
+' as "policy" and the four physical gates carry the decision alone.
+' The 1.5 s client timeout sits inside NFR1's 2 s preview budget on
+' purpose: a hanging AI must not blow the response-time requirement.
+' =====================================================================
+@startuml
+skinparam backgroundColor White
+skinparam shadowing false
+skinparam sequence {
+  ArrowColor #34495E
+  LifeLineBorderColor #7F8C8D
+  ParticipantBorderColor #34495E
+  ParticipantBackgroundColor #FBFCFE
+  LifeLineBackgroundColor #EAF2FA
+}
+
+actor Controller as C
+participant "Web tier" as API
+database "SQLite" as DB
+participant "AI service\n(down)" as AI
+participant "Task manager" as TM
+
+== Cost the job, exactly as before ==
+C -> API ++ : POST /preview  SKU-1002 -> delivery_1
+API -> DB ++ : product, pick point, bay
+DB --> API -- : 0.6 kg, pick (-2.0, 0.95), bay (-3.0, -2.2)
+API -> DB ++ : live robot condition
+DB --> API -- : battery 92%, 24 C, condition 100%
+API -> API : project, then cost the three legs
+API -> API : gates 1-4 all pass
+
+== The model cannot be reached ==
+API ->x AI : POST /predict  (1.5 s timeout)
+API -> API : Predictor returns None;\ndecided_by stays "policy"
+API --> C -- : ACCEPTED  decided_by = policy\ncost shown as usual
+
+== The order runs normally ==
+C -> API ++ : POST /confirm
+API -> DB : create order, record decided_by = policy
+API ->> TM : publish /orders/new
+API --> C -- : order pending
+
+note over API, AI
+  NFR2: the robot must keep working when the AI does not. The four
+  physical gates are unchanged, so nothing unsafe can be admitted -
+  the model was only ever able to refuse, never to approve. The order
+  records that it was decided without the model, so the report can say
+  how each decision was actually made.
+end note
+
+@enduml

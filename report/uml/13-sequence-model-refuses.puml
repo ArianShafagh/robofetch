@@ -1,0 +1,53 @@
+' =====================================================================
+' RoboFetch - A6: the four physical gates PASS and the classifier
+' refuses. The counterpart to scenario 2, where the physics refused and
+' the model was never reached.
+'
+' Figures are real: SKU-2001 (3.2 kg) from a 74% battery leaves 15.8%,
+' which clears the 15% reserve - and the model still calls it
+' infeasible at 67% confidence. Verified by running the exported model.
+' =====================================================================
+@startuml
+skinparam backgroundColor White
+skinparam shadowing false
+skinparam sequence {
+  ArrowColor #34495E
+  LifeLineBorderColor #7F8C8D
+  ParticipantBorderColor #34495E
+  ParticipantBackgroundColor #FBFCFE
+  LifeLineBackgroundColor #EAF2FA
+}
+
+actor Controller as C
+participant "Web tier" as API
+database "SQLite" as DB
+participant "AI service" as AI
+participant "Task manager" as TM
+
+== Cost the job ==
+C -> API ++ : POST /preview  SKU-2001 -> delivery_1
+API -> DB ++ : product, pick point, bay
+DB --> API -- : 3.2 kg, pick (1.05, 0.95), bay (-3.0, -2.2)
+API -> DB ++ : live robot condition
+DB --> API -- : battery 74%, 30 C, condition 100%
+API -> API : project, then cost the three legs
+
+== The physics allows it ==
+API -> API : gate 1  stock: passes
+API -> API : gate 2  reserve: leaves 15.8%,\nclears the 15% minimum
+API -> API : gate 3  thermal: peak 57.6 C,\nunder the 70 C limit
+API -> API : gate 4  condition: 100%, above 30%
+
+== Only now is the model asked ==
+API -> AI ++ : predict  battery 74%, 3.2 kg, 11.4 m
+AI --> API -- : infeasible, confidence 67%
+API --> C -- : REFUSED  decided_by = model\n"predicted infeasible in the robot's\ncurrent condition (confidence 67%)"
+
+note over API, TM
+  The order is affordable, cool enough and the robot is healthy, so the
+  physics would have accepted it. The model refuses because 15.8% is a
+  hair above the 15% line and it was trained on jittered thresholds.
+  Nothing is written and the task manager is never told.
+end note
+
+@enduml

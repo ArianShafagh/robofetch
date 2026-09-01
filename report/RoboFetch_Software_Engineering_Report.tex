@@ -1369,6 +1369,22 @@ than one that returns at once. Nothing is written by the
 stop itself, so it does not survive a logout and the next order is an ordinary
 one.}{fig:seqestop}
 
+\uploadedfigure{Figures/13-sequence-model-refuses.png}{0.92\textwidth}
+{Scenario 4: the four physical gates pass and the \emph{classifier} refuses. Read against
+Figure~\ref{fig:seqrefused} this is the other half of the admission argument: there the physics
+refused and the model was never reached, here the physics allows the job and only then is the model
+asked. It refuses because 15.8\% remaining is barely above the 15\% reserve, and the model was
+trained on jittered thresholds, so it treats the margin as too thin. Searching the whole input space
+finds only four such orders, all with between 15.3\% and 16.8\% remaining -- the model disagrees
+with the gates only in a sliver less than two points wide.}{fig:seqmodel}
+
+\uploadedfigure{Figures/14-sequence-ai-unavailable.png}{0.92\textwidth}
+{Scenario 5: the prediction service cannot be reached and the system decides anyway, which is NFR2
+shown rather than asserted. The client times out at 1.5 s, inside the two-second budget NFR1 sets
+for the whole preview, so a hanging model cannot break the response-time requirement. The four
+physical gates are unchanged, and because the model was only ever able to refuse, losing it cannot
+admit anything unsafe. The order records that it was decided without the model.}{fig:seqnoai}
+
 \section{The Database Layer}
 The database layer is a single class that owns the schema and exposes domain operations. On first
 use it creates the tables and inserts the seed data describing the warehouse and the catalogue, so
@@ -2543,6 +2559,8 @@ tree imports the training package \\
 \ref{fig:seqsuccess} & Scenario 1: an order placed and delivered \\
 \ref{fig:seqrefused} & Scenario 2: an order refused on the robot's condition \\
 \ref{fig:seqestop} & Scenario 3: a running order halted by the emergency stop \\
+\ref{fig:seqmodel} & Scenario 4: an order refused by the classifier, not by the gates \\
+\ref{fig:seqnoai} & Scenario 5: a decision taken with the prediction service unreachable \\
 \ref{fig:payloadenergy} & Energy per metre against payload \\
 \ref{fig:statemachine} & Duty-cycle state machine \\
 \ref{fig:battery} & Battery over one session \\
