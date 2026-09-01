@@ -1336,17 +1336,23 @@ they cover the three outcomes an order can have: it is delivered, it is never st
 stopped.
 
 \uploadedfigure{Figures/03-sequence-order-success.png}{0.98\textwidth}
-{Scenario 1: a controller places an order and it is delivered. The task manager sends a
-destination, not a velocity: the navigation stack decides how to get there and drives the robot
+{Scenario 1: a controller places an order and it is delivered. The admission steps appear in the
+order the code runs them: the robot's condition is read and projected forward past work already
+accepted before any gate, and the classifier is gate 5, reached only because the four physical
+checks passed. The task manager sends a destination, not a velocity: the navigation stack decides how to get there and drives the robot
 itself, which is why it is the navigation stack and not the task manager that writes to the
 velocity topic. The decision is taken before anything is stored, and the outcome is decided by reading the parcel's real position rather than by
 the fact that every command returned success. The figures are those of order 1 of the recorded
 acceptance run.}{fig:seqsuccess}
 
 \uploadedfigure{Figures/11-sequence-order-refused.png}{0.92\textwidth}
-{Scenario 2: the same request is refused because the robot has not the battery to finish it and
-return. The classifier is consulted, but the policy gates decide; nothing is written to the orders
-table and the robot is never sent, so a refusal costs one preview.}{fig:seqrefused}
+{Scenario 2: the same request is refused because the robot could not return to its station
+afterwards. The gate order is the subject of this diagram: the reserve check is gate 2, it returns
+immediately, and gates 3 to 5 never run -- so the \emph{classifier is not consulted at all}, and
+its lifeline stays empty. That is the strongest form of the argument in Section~\ref{sec:c2}: the
+model can refuse an order the physics allowed, but it is never in a position to approve one the
+physics rejected. Nothing is written and nothing is published, so a refusal costs one preview and
+there is nothing to undo.}{fig:seqrefused}
 
 \uploadedfigure{Figures/12-sequence-emergency-stop.png}{0.95\textwidth}
 {Scenario 3: the operator halts a running order. Inside the task manager the stop is handled on the
@@ -1630,6 +1636,7 @@ docked.}{fig:temperature}
 above the warning temperature.}{fig:wear}
 
 \section{C2 - Order Admission and Cost Preview}
+\label{sec:c2}
 
 \subsection{The Procedure}
 The admission workflow is the decision procedure of the system. Figure~\ref{fig:activity} gives it

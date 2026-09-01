@@ -4,6 +4,10 @@
 ' is taken BEFORE the order is stored, and the delivery is confirmed
 ' against the simulator before it is reported complete.
 ' Figures are from the recorded acceptance run (order 1, SKU-1001).
+' The admission steps are shown in the order the code runs them: the robot's
+' condition is read and projected forward BEFORE any gate, and the classifier
+' is gate 5 - consulted only once the four physical checks have passed. It can
+' refuse an order the physics allowed; it can never approve one they rejected.
 ' Arrowheads carry meaning: a filled head is a synchronous call the sender
 ' waits on; an open head is an asynchronous ROS topic publish, which gets no
 ' reply - which is why the status message has no return arrow.
@@ -33,6 +37,10 @@ participant "Gazebo" as GZ
 C -> API ++ : POST /preview  SKU-1001 -> delivery_1
 API -> DB ++ : product, pick point, bay
 DB --> API -- : 0.6 kg, (-3.0, 0.95), (-3.0, -2.2)
+API -> DB ++ : live robot condition
+DB --> API -- : battery 100%, 22 C, condition 100%
+API -> API : project past work already accepted,\nthen cost the three legs
+API -> API : gates 1-4: stock, reserve,\nthermal, condition  -- all pass
 API -> AI ++ : predict  battery 100%, 0.6 kg, 8.6 m
 AI --> API -- : feasible
 API --> C -- : accepted, 3.71 Wh

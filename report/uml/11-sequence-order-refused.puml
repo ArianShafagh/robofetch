@@ -1,8 +1,15 @@
 ' =====================================================================
 ' RoboFetch - Scenario 2 of 3: an order is REFUSED because the robot
-' does not have the battery to finish it. Nothing is stored and the
-' robot is never sent, so the refusal costs nothing but a preview.
-' The reason string is the one the system really produces.
+' could not get back to its station afterwards.
+'
+' The point of this scenario is the GATE ORDER. The four physical
+' checks run first and the classifier is gate 5, so a refusal on the
+' reserve returns before the model is ever asked - the AI service
+' lifeline stays empty on purpose. A classifier can refuse an order
+' the physics allowed; it can never approve one the physics rejected.
+'
+' Nothing is written and nothing is published, so a refusal costs one
+' preview and there is nothing to undo.
 ' =====================================================================
 @startuml
 skinparam backgroundColor White
@@ -14,7 +21,6 @@ skinparam sequence {
   ParticipantBackgroundColor #FBFCFE
   LifeLineBackgroundColor #EAF2FA
 }
-
 
 actor Controller as C
 participant "Web tier" as API
@@ -28,12 +34,17 @@ API -> DB ++ : product, pick point, bay
 DB --> API -- : 4.5 kg, route 8.6 m including the way home
 API -> DB ++ : live robot condition
 DB --> API -- : battery 18%, 41 C, condition 99%
-API -> API : roll the state forward past work\nalready accepted but not yet done
+API -> API : project past work already accepted,\nthen cost the three legs
 
-== Ask the model, then decide ==
-API -> AI ++ : predict  battery 18%, 4.5 kg, 8.6 m
-AI --> API -- : infeasible, confidence 54%
-API -> API : apply policy gates:\nstock, reserve, thermal, condition
-API --> C -- : REFUSED\n"predicted infeasible in the robot's\ncurrent condition (confidence 54%)"
+== Run the gates in order ==
+API -> API : gate 1  stock: 1 in stock, passes
+API -> API : gate 2  reserve: battery would fall to 4%,\nbelow the 15% needed to reach the station
+API --> C -- : REFUSED\n"battery would fall to 4%, below the 15%\nreserve needed to return to the station"
+
+note over AI, TM
+  Gate 2 returns immediately, so gates 3 to 5 never run: the classifier is
+  not consulted and the task manager is never told. A refusal costs one
+  preview, and there is nothing to roll back because nothing was written.
+end note
 
 @enduml
