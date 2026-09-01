@@ -1347,10 +1347,12 @@ return. The classifier is consulted, but the policy gates decide; nothing is wri
 table and the robot is never sent, so a refusal costs one preview.}{fig:seqrefused}
 
 \uploadedfigure{Figures/12-sequence-emergency-stop.png}{0.95\textwidth}
-{Scenario 3: the operator halts a running order. The stop is handled on the subscription callback
-rather than on the worker thread, because the worker is blocked waiting on a navigation result at
-exactly the moment the button is pressed. Nothing is written by the stop itself, so it does not
-survive a logout and the next order is an ordinary one.}{fig:seqestop}
+{Scenario 3: the operator halts a running order. The task manager carries \emph{two overlapping
+execution occurrences}: the outer one is its worker thread, blocked waiting on a navigation result
+at exactly the moment the button is pressed, and the inner one is the subscription callback, which
+is free to act while the worker cannot. That is why the stop is handled on the callback rather than
+on the worker. Nothing is written by the stop itself, so it does not survive a logout and the next
+order is an ordinary one.}{fig:seqestop}
 
 \section{The Database Layer}
 The database layer is a single class that owns the schema and exposes domain operations. On first
