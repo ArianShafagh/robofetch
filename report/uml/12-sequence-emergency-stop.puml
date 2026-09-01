@@ -1,12 +1,9 @@
 ' =====================================================================
 ' RoboFetch - Scenario 3 of 3: the operator halts a running order.
-'
-' ONE lifeline for the task manager, because it is one component. The
-' two threads inside it are drawn as two overlapping execution
-' occurrences on that lifeline, which is what UML uses for concurrent
-' execution within a single participant. The outer bar is the worker,
-' blocked on a navigation result; the inner bar is the subscription
-' callback, which is why the stop can act while the worker cannot.
+' One lifeline and one execution occurrence per participant. The
+' concurrency inside the task manager - the stop being handled on the
+' subscription callback while the worker is blocked on a navigation
+' result - is explained in the report text rather than drawn here.
 ' =====================================================================
 @startuml
 skinparam backgroundColor White
@@ -28,15 +25,11 @@ participant "Gazebo" as GZ
 
 activate TM
 TM -> NAV ++ : navigate to delivery_1
-note right of TM : worker thread:\nblocked until Nav2 answers
 
 == The button is pressed ==
 C -> API ++ : POST /estop
 API -> TM : publish /robot/estop
-activate TM #D6E4F0
-note right of TM : callback thread:\nruns while the worker waits
 API --> C -- : stopped
-
 TM -> NAV : cancel the in-flight goal
 NAV --> TM -- : CANCELED
 TM -> GZ : /cmd_vel zero, held for 1 s
@@ -44,7 +37,6 @@ TM -> API ++ : order 4 FAILED\n"halted by the emergency stop"
 TM -> API : queued orders FAILED, with a reason
 API -> DB : update orders
 API --> TM --
-deactivate TM
 deactivate TM
 
 == It does not latch ==
