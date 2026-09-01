@@ -4,6 +4,9 @@
 ' is taken BEFORE the order is stored, and the delivery is confirmed
 ' against the simulator before it is reported complete.
 ' Figures are from the recorded acceptance run (order 1, SKU-1001).
+' Arrowheads carry meaning: a filled head is a synchronous call the sender
+' waits on; an open head is an asynchronous ROS topic publish, which gets no
+' reply - which is why the status message has no return arrow.
 ' =====================================================================
 @startuml
 skinparam backgroundColor White
@@ -24,7 +27,7 @@ participant "AI service" as AI
 participant "Task manager" as TM
 participant "Nav2" as NAV
 participant "Gripper" as GR
-participant "Gazebo" as GZ
+participant "Pose publisher\n(Gazebo)" as GZ
 
 == Decide, before anything is stored ==
 C -> API ++ : POST /preview  SKU-1001 -> delivery_1
@@ -37,7 +40,7 @@ API --> C -- : accepted, 3.71 Wh
 == Confirm ==
 C -> API ++ : POST /confirm
 API -> DB : create order 1, reserve its energy
-API -> TM ++ : publish /orders/new
+API ->> TM ++ : publish /orders/new
 API --> C -- : order 1, pending
 
 == Execute ==
@@ -51,10 +54,11 @@ TM -> GR ++ : release(parcel_1)
 GR --> TM -- : joint reports "detached"
 
 == Confirm against the simulator ==
-GZ --> TM : parcel_1 at (-2.61, -1.94)
-TM -> API ++ : status completed\n"delivered (0.47 m from target)"
+GZ -->> TM : parcel_1 at (-2.61, -1.94)
+TM ->> API : status completed\n"delivered (0.47 m from target)"
+activate API
 API -> DB : update order + delivery history
-API --> TM --
+deactivate API
 deactivate TM
 
 @enduml

@@ -1,9 +1,12 @@
 ' =====================================================================
 ' RoboFetch - Scenario 3 of 3: the operator halts a running order.
-' One lifeline and one execution occurrence per participant. The
-' concurrency inside the task manager - the stop being handled on the
-' subscription callback while the worker is blocked on a navigation
-' result - is explained in the report text rather than drawn here.
+'
+' Arrowheads carry meaning here. A filled head (->) is a synchronous
+' call that the sender waits on: the HTTP request, and the web tier's
+' direct call into the database. An open head (->>) is asynchronous:
+' every ROS topic publish, which is fire-and-forget with no reply.
+' The status messages therefore have NO return arrow - the web tier
+' never answers the task manager, it only listens.
 ' =====================================================================
 @startuml
 skinparam backgroundColor White
@@ -21,22 +24,23 @@ participant "Web tier" as API
 database "SQLite" as DB
 participant "Task manager" as TM
 participant "Nav2" as NAV
-participant "Gazebo" as GZ
+participant "Robot drive\n(Gazebo)" as GZ
 
 activate TM
-TM -> NAV ++ : navigate to delivery_1
+TM ->> NAV ++ : navigate to delivery_1
 
 == The button is pressed ==
 C -> API ++ : POST /estop
-API -> TM : publish /robot/estop
+API ->> TM : publish /robot/estop
 API --> C -- : stopped
-TM -> NAV : cancel the in-flight goal
-NAV --> TM -- : CANCELED
-TM -> GZ : /cmd_vel zero, held for 1 s
-TM -> API ++ : order 4 FAILED\n"halted by the emergency stop"
-TM -> API : queued orders FAILED, with a reason
+TM ->> NAV : cancel the in-flight goal
+NAV -->> TM -- : CANCELED
+TM ->> GZ : /cmd_vel zero, held for 1 s
+TM ->> API : order 4 FAILED\n"halted by the emergency stop"
+activate API
+TM ->> API : queued orders FAILED, with a reason
 API -> DB : update orders
-API --> TM --
+deactivate API
 deactivate TM
 
 == It does not latch ==
