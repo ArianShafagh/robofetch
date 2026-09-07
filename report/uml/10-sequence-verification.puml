@@ -1,10 +1,25 @@
 ' =====================================================================
 ' RoboFetch - Sequence diagram: C3, physical delivery verification
-' The point of the diagram is that TWO independent sources of truth are
-' consulted - the joint's own reported state, and the parcel's position
-' in the physics engine - and that neither is the command pipeline that
-' asked for the work. Every path that does not end in confirmed evidence
-' ends in a FAILED order, never in a reported success.
+'
+' Deliberately simplified to the CONCEPT rather than every retry and
+' edge case: two independent pieces of real-world evidence - the
+' gripper joint's own reported state, and the parcel's real position
+' in the simulator - are checked before an order is ever marked
+' complete. Neither is the command pipeline that asked for the work.
+' (Does not show: the up-to-3-attempts release retry loop, or the
+' "joint never reported at all" fallback - see gripper_node.py's
+' on_release() and task_manager.py's execute_order() for those.)
+'
+' Arrowheads carry real meaning here, same convention as
+' 03-sequence-order-success.puml: a filled head (->) is a synchronous
+' call the sender waits on; an open head (->>) is a one-way ROS topic
+' publish that gets no reply at all. Gazebo NEVER answers a question -
+' it only ever broadcasts state on its own topics, independent of
+' whether anyone is listening at that moment. The gripper and task
+' manager only ever PUBLISH into that space and separately, passively,
+' read whatever the last broadcast happened to say - which is exactly
+' why a settle-time wait and a distance check are needed at all,
+' instead of a single trustworthy reply.
 ' =====================================================================
 @startuml
 skinparam backgroundColor White
@@ -14,61 +29,39 @@ skinparam sequence {
   LifeLineBorderColor #7F8C8D
   ParticipantBorderColor #34495E
   ParticipantBackgroundColor #FBFCFE
-  GroupBorderColor #7F8C8D
 }
 
+participant "Task Manager\n(the brain)" as TM
+participant "Gripper Node\n(the hand)" as GR
+participant "Gazebo\n(the real world)" as GZ
 
-participant "Task manager" as TM
-participant "Gripper node" as GR
-participant "DetachableJoint\n(Gazebo plugin)" as JOINT
-participant "Pose publisher\n(Gazebo)" as POSE
-participant "Web tier" as API
-database "SQLite" as DB
+TM -> GR ++ : release(parcel)  -- a real\nservice call, TM waits
+GR ->> GZ : publish "detach"\n(fire and forget, no reply)
+GR -> GR : wait the settle time
+GZ -->> GR : the joint broadcasts its OWN\nstate on a separate topic:\n"detached"
+GR --> TM -- : released, and I confirmed it\nagainst the joint's own state
 
-== Layer 1: did the gripper really let go? ==
-TM -> GR : release(model)
-loop up to release_attempts (3)
-  GR -> JOINT : publish detach
-  GR -> GR : wait settle_time
-  JOINT --> GR : state "attached" / "detached"
-  alt joint reports "detached"
-    GR -> GR : released, record evidence
-  else joint still reports "attached"
-    GR -> GR : retry
-  end
-end
+note over GR, GZ
+  EVIDENCE #1: the gripper's own joint broadcast
+  "detached" on its own - not a reply to the
+  detach command, and not just "I sent it".
+end note
 
-alt still attached after 3 attempts
-  GR --> TM : not released
-  TM -> TM : _parcel_is_stuck
-  TM -> API : status FAILED\n"could not put the parcel down"
-  API -> DB : update order
-  note right of TM : the order ENDS here
-  destroy GR
-else joint never reported at all
-  GR --> TM : released, but UNVERIFIED\n(the evidence string says so)
-else joint reports "detached"
-  GR --> TM : released, verified
-end
-
-== Layer 2: is the parcel actually at the bay? ==
 TM -> TM : wait 1 s for the physics to settle
-POSE --> TM : /model/<parcel>/pose  (x, y)
+GZ -->> TM : the parcel's pose, broadcast\non its own topic all along\n(Task Manager just reads\nthe latest value)
 
-alt no pose has ever been received
-  TM -> API : status FAILED\n"cannot confirm delivery: no pose"
-  note right of TM : no evidence = failure
-  API -> DB : update order
-else pose available
-  TM -> TM : gap = distance(pose, delivery bay)
-  alt gap > delivery_tolerance (0.7 m)
-    TM -> API : status FAILED\n"ended <gap> m from the bay -\nit was never carried"
-    API -> DB : update order
-    TM -> TM : return to station
-  else gap within tolerance
-    TM -> API : status COMPLETED\n"delivered (<gap> m from target)"
-    API -> DB : update order + delivery history
-  end
+TM -> TM : measure distance from that position\nto the delivery bay
+
+note over TM, GZ
+  EVIDENCE #2: the parcel's REAL position,
+  overheard from Gazebo's own broadcast - never
+  requested, and never "I drove to the right spot".
+end note
+
+alt close enough to the bay
+  TM -> TM : mark the order COMPLETED
+else too far away
+  TM -> TM : mark the order FAILED\n(it was never actually carried)
 end
 
 @enduml

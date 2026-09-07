@@ -22,11 +22,11 @@ from dataclasses import dataclass, asdict
 # inside a demo session and the accept/refuse decision would have nothing to refuse on: the whole
 # point of C2 is visible only if the robot actually runs low while someone is watching.
 #
-# Measured across the whole catalogue from a FULL battery - note these are the figures AFTER the
-# robot has driven home again, which is what RESERVE_PERCENT is judged against, not the outbound
-# leg alone: the heaviest order (SKU-3001 -> delivery_1, 6.13 Wh) leaves 34.8%, the lightest
-# (SKU-3002 -> delivery_2, 1.85 Wh) leaves 74.9%. All twelve product/bay combinations are still
-# accepted from full, so nothing became unorderable; the robot simply recharges far more often.
+# Sized so the worst-case order/bay combination, judged AFTER the robot has driven home again
+# (which is what RESERVE_PERCENT is judged against, not the outbound leg alone), still clears
+# the reserve from a full charge - see the acceptance-suite figures in the report for the
+# current measured worst/best case across the whole catalogue, which move whenever this
+# constant or the cost formula in admission.estimate() changes.
 #
 # This constant is load-bearing well beyond this file. The ML training label depends on how much
 # of the pack an order consumes, so CHANGING IT INVALIDATES model.joblib - regenerate and
@@ -66,6 +66,7 @@ COOL_AT_STATION = 1.5        # cooling is more effective when parked and idle
 EFFECTIVE_SPEED = 0.18       # m/s
 FIXED_OVERHEAD_S = 8.0       # grab + release settling per order
 DRIVE_LOAD = 0.7             # typical motor load while driving, 0..1
+SETTLE_LOAD = 0.1            # motor load while grabbing/releasing - near-idle, not driving
 
 # -------------------------------------------------------------- admission thresholds
 RESERVE_PERCENT = 15.0       # charge that must remain AFTER returning to the station
@@ -154,26 +155,46 @@ class RobotCondition:
         return asdict(self)
 
 
-def simulate_route(condition, distance_m, payload_kg, dt=1.0, motor_load=DRIVE_LOAD):
-    """Forward-simulate the condition model over a proposed route.
+def simulate_route(condition, legs, dt=1.0, motor_load=DRIVE_LOAD,
+                   settle_s=0.0, settle_load=SETTLE_LOAD):
+    """Forward-simulate the condition model over one or more driven legs.
 
     Admission control needs more than "how many Wh": it needs to know whether the robot would
     OVERHEAT part-way, which a single energy number cannot tell you because temperature is a
     trajectory, not a total. Stepping the same model the live robot runs gives the peak.
 
+    `legs` is an iterable of (distance_m, payload_kg) pairs, walked back-to-back on the SAME
+    condition object - e.g. the empty leg to a pick point followed by the loaded leg to the
+    delivery bay, so the payload's heat and energy cost is only charged for the distance it is
+    actually carried over, not for the whole order.
+
+    `settle_s` (typically FIXED_OVERHEAD_S) is the grab/release dwell time, modelled as one
+    STATIONARY phase at `settle_load` after every leg has been walked - not folded into any
+    leg's own drive time. The robot is standing still and actuating a gripper during this
+    phase, not driving, so it does not belong inside a leg's distance/speed calculation, and it
+    must only be added ONCE per order regardless of how many legs make it up: passing it as a
+    parameter here, rather than letting each leg add its own copy via `duration_s()`, is what
+    stops a two-leg route from being simulated as if the robot stopped to settle twice.
+
     Returns (predicted_condition_at_the_end, peak_temperature_reached).
     """
     sim = RobotCondition(**condition.as_dict())
-    total = duration_s(distance_m)
-    speed = distance_m / total if total > 0 else 0.0
     peak = sim.temperature_c
-    elapsed = 0.0
-    while elapsed < total:
-        step = min(dt, total - elapsed)
-        sim.step(step, distance_m=speed * step, payload_kg=payload_kg,
-                 motor_load=motor_load)
-        peak = max(peak, sim.temperature_c)
-        elapsed += step
+
+    def walk(total_s, distance_m, payload_kg, load):
+        nonlocal peak
+        speed = distance_m / total_s if total_s > 0 else 0.0
+        elapsed = 0.0
+        while elapsed < total_s:
+            step = min(dt, total_s - elapsed)
+            sim.step(step, distance_m=speed * step, payload_kg=payload_kg, motor_load=load)
+            peak = max(peak, sim.temperature_c)
+            elapsed += step
+
+    for distance_m, payload_kg in legs:
+        walk(distance_m / EFFECTIVE_SPEED, distance_m, payload_kg, motor_load)
+    if settle_s > 0:
+        walk(settle_s, 0.0, 0.0, settle_load)
     return sim, peak
 
 

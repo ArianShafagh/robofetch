@@ -1,10 +1,21 @@
 ' =====================================================================
 ' RoboFetch - Activity diagram: order admission (complex feature C2)
 '
-' The gate ORDER is the point of this diagram. The physical checks run
-' first, so the classifier can only ever refuse an order the physics
+' Corrects one ordering error and one omission in 05-activity-admission.puml:
+'   1. The robot's condition must be READ AND PROJECTED FORWARD before any
+'      cost can be estimated - estimate()/simulate_route() take the
+'      projected condition as an input, so "read robot condition" cannot
+'      happen after "estimate energy" the way the original diagram drew it.
+'   2. The RESERVATION LEDGER (project() rolling the robot's state past
+'      work already accepted and not yet finished) was missing entirely,
+'      even though admission.py's own module docstring names it as one of
+'      the two reasons this is defended as a complex feature rather than a
+'      simple formula.
+'
+' The gate ORDER is still the point of the diagram: the physical checks
+' run first, so the classifier can only ever refuse an order the physics
 ' already allowed - it can never approve one they rejected.
-' Source: robofetch_bridge/admission.py (decide)
+' Source: robofetch_bridge/admission.py (decide, project, estimate)
 ' =====================================================================
 @startuml
 skinparam backgroundColor White
@@ -17,15 +28,27 @@ skinparam activity {
   DiamondBorderColor #34495E
 }
 
-
 start
 :Receive product_id and delivery_id;
 :Look up product\n(weight, pick point);
 :Look up destination bay;
-:Compute the three route legs\nrobot to pick, pick to bay,\nbay back to station;
-:Estimate energy with the\ndeterministic formula;
-:Forward-simulate the condition model\nto find the peak temperature;
-:Read the live robot condition;
+:Read the LIVE robot condition\n(battery, temperature, condition);
+
+partition "Reservation ledger" {
+  :Sum energy + peak temperature of every\norder still in flight (pending ... releasing);
+  :Project the robot forward past that\nwork - NOT the live reading alone;
+  note right
+    Without this, two orders accepted while
+    the robot is still busy would both be
+    judged against the same battery, letting
+    them together commit more than the pack
+    holds.
+  end note
+}
+
+:Compute the three route legs\n(empty leg to pick, loaded leg to bay,\nempty leg home);
+:Cost the empty and loaded legs\nseparately at the PROJECTED condition;
+:Forward-simulate the condition model\nover both legs to find peak temperature;
 
 if (stock available?) then (no)
   :REFUSE\n"out of stock";
@@ -57,7 +80,7 @@ partition "Learned verdict" {
     endif
     :decided_by = model;
   else (no)
-    :Fall back to the deterministic\nmodel alone;
+    :Fall back to the deterministic\nmodel alone (NFR2);
     :decided_by = policy;
   endif
 }

@@ -12,6 +12,9 @@ coordinate:
     delivery_history (order_id, duration, distance, energy, payload, outcome)
     robot_telemetry  (ts, run_id, order_id, battery, temperature, condition, ...)
     robot_state      (single row: the CURRENT robot state, for fast reads)
+    sessions          (token, username, role, created_at) -- server-side sessions
+    sqlite_sequence    (autoincrement counters for orders and telemetry)
+    users             (username, password_hash, salt, role, created_at)
 
 A client orders "SKU-3001 to delivery_2" and the coordinates are resolved here. That is what
 makes the catalogue worth having: the warehouse layout can change without any client, or any

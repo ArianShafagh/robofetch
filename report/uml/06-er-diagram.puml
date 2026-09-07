@@ -1,7 +1,32 @@
 ' =====================================================================
 ' RoboFetch - Entity relationship diagram
-' The conceptual view of the same nine tables shown in the database
-' class diagram (07_database_class.puml).
+' The conceptual view of the tables shown in the database class
+' diagram (07-database-class.puml). Matches robofetch_bridge/db.py
+' SCHEMA exactly - crow's-foot cardinality is read off the actual
+' NOT NULL / FOREIGN KEY constraints, not off what a normal launch
+' happens to populate.
+'
+' Two things the previous version of this diagram got wrong:
+'
+'   1. products.shelf_id, products.pick_point_id, orders.product_id
+'      and orders.delivery_id are ALL NULLable columns (no NOT NULL
+'      in SCHEMA) - so the "one and only one" (||) end of those four
+'      relationships was wrong; it has to be "zero or one" (o|).
+'      orders.product_id/delivery_id are null exactly when
+'      kind = 'return' (db.py create_order: "a return has neither").
+'   2. PICK_POINTS -> PRODUCTS was drawn backwards on both ends: the
+'      foreign key is products.pick_point_id REFERENCES
+'      pick_points(pick_point_id), so PRODUCTS is the many/optional
+'      side and PICK_POINTS is the one/optional side, not the other
+'      way round.
+'
+' USERS and SESSIONS were missing entirely. ROBOT_TELEMETRY.order_id
+' and SESSIONS.username are real columns but were never declared as
+' SQL FOREIGN KEYs in SCHEMA - drawn here as dashed relationships so
+' the diagram does not claim an enforcement the database does not
+' have. STATION has no relationship at all: nothing in SCHEMA
+' references it by foreign key, it is read directly by application
+' code (admission.py, app.py) as a singleton row.
 ' =====================================================================
 @startuml
 skinparam backgroundColor White
@@ -9,7 +34,6 @@ skinparam shadowing false
 skinparam linetype ortho
 hide circle
 hide empty methods
-
 
 entity "SHELVES" as shelves {
   * shelf_id : TEXT <<PK>>
@@ -21,7 +45,7 @@ entity "SHELVES" as shelves {
 entity "PICK_POINTS" as picks {
   * pick_point_id : TEXT <<PK>>
   --
-  * shelf_id : TEXT <<FK>>
+  * shelf_id : TEXT <<FK>>   ' NOT NULL
   x : REAL
   y : REAL
 }
@@ -40,6 +64,12 @@ entity "STATION" as station {
   x : REAL
   y : REAL
 }
+note bottom of station
+  singleton row (one warehouse).
+  Read directly by admission.py /
+  app.py - no FK anywhere targets
+  this table.
+end note
 
 entity "PRODUCTS" as products {
   * product_id : TEXT <<PK>>
@@ -48,21 +78,28 @@ entity "PRODUCTS" as products {
   category : TEXT
   weight_kg : REAL
   stock : INTEGER
-  shelf_id : TEXT <<FK>>
-  pick_point_id : TEXT <<FK>>
+  shelf_id : TEXT <<FK>>        ' nullable
+  pick_point_id : TEXT <<FK>>   ' nullable
   model_name : TEXT
 }
 
 entity "ORDERS" as orders {
   * id : INTEGER <<PK>>
   --
-  product_id : TEXT <<FK>>
-  delivery_id : TEXT <<FK>>
+  kind : TEXT                    ' 'delivery' | 'return'
+  product_id : TEXT <<FK>>       ' NULL when kind = 'return'
+  delivery_id : TEXT <<FK>>      ' NULL when kind = 'return'
   status : TEXT
   attempts : INTEGER
+  detail : TEXT
+  estimated_distance_m : REAL
   estimated_energy_wh : REAL
-  decision : TEXT
-  decided_by : TEXT
+  estimated_return_energy_wh : REAL
+  estimated_peak_c : REAL
+  estimated_seconds : REAL
+  decision : TEXT                ' accepted | refused
+  decision_reason : TEXT
+  decided_by : TEXT              ' model | fallback | operator
   created_at : REAL
   completed_at : REAL
 }
@@ -82,28 +119,65 @@ entity "ROBOT_TELEMETRY" as telemetry {
   --
   ts : REAL
   run_id : TEXT
+  order_id : INTEGER   ' logical link only, see note
   battery_percent : REAL
   temperature_c : REAL
   condition_percent : REAL
   payload_kg : REAL
+  motor_load : REAL
+  speed : REAL
+  cumulative_distance_m : REAL
   state : TEXT
 }
 
 entity "ROBOT_STATE" as state {
-  * id : INTEGER <<PK>>
+  * id : INTEGER <<PK>>          ' CHECK (id = 1): single row
   --
   battery_percent : REAL
   temperature_c : REAL
   condition_percent : REAL
+  payload_kg : REAL
+  motor_load : REAL
+  cumulative_distance_m : REAL
+  uptime_s : REAL
   state : TEXT
+  run_id : TEXT
   last_update : REAL
 }
 
-shelves ||--|{ picks : "holds"
-shelves ||--o{ products : "stores"
-picks ||--o| products : "gives access to"
-products ||--o{ orders : "is requested in"
-bays ||--o{ orders : "receives"
-orders ||--o| history : "is recorded as"
+entity "USERS" as users {
+  * username : TEXT <<PK>>
+  --
+  password_hash : TEXT
+  salt : TEXT
+  role : TEXT        ' admin | controller
+  created_at : REAL
+}
+
+entity "SESSIONS" as sessions {
+  * token : TEXT <<PK>>
+  --
+  username : TEXT   ' logical link only, see note
+  role : TEXT
+  created_at : REAL
+}
+note bottom of sessions
+  username has no SQL FOREIGN KEY
+  in SCHEMA; db.delete_user()
+  deletes matching sessions
+  itself, in application code.
+end note
+
+' ------------------------------------------------------- solid = FK-enforced
+shelves ||--o{ picks    : "holds"
+shelves |o--o{ products : "stores"
+picks   |o--o{ products : "supplies"
+products |o--o{ orders  : "is requested in"
+bays    |o--o{ orders   : "is delivered to"
+orders  ||--o| history  : "is recorded as"
+
+' --------------------------------------------------- dashed = logical only
+users    ||..o{ sessions  : "authenticates"
+orders   |o..o{ telemetry : "tags samples from"
 
 @enduml

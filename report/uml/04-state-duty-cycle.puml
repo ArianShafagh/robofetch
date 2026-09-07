@@ -1,8 +1,43 @@
 ' =====================================================================
 ' RoboFetch - State machine: the robot duty cycle (complex feature C1)
-' Health states outrank activity: an overheated robot is in COOLDOWN
-' whatever the task manager believes it is doing.
-' Source: robofetch_core/robot_state_node.py (_duty_state), task_manager.py
+'
+' Verified against a live headless run (this file corrects two transitions
+' in the original 04-state-duty-cycle.puml that did not match the code):
+'
+'   1. CHARGING never transitions to IDLE on its own - nothing republishes
+'      "idle" just because the battery recharged. The robot stays reported
+'      CHARGING until an order is dequeued, which goes straight to WORKING.
+'   2. A failed return-to-station reports IDLE, not FAULT (see
+'      task_manager.return_to_station()'s failure branch). FAULT is caused
+'      only by low mechanical condition, unrelated to navigation failures.
+'
+' STOPPED (emergency stop) was missing entirely and is added here - it
+' outranks every other state and is reachable from any of them.
+'
+' COOLDOWN and FAULT are not states the robot "enters" via an event - they
+' are recomputed fresh on every telemetry tick from live temperature /
+' condition (robot_state_node._duty_state()), and can overlay ANY
+' underlying activity. In particular COOLDOWN is purely informational: it
+' changes what admission control will accept, but does not itself pause
+' whatever task_manager is currently doing.
+'
+' Re-verified against the live code a second time, which found two more
+' mismatches, now fixed:
+'
+'   3. FAULT (condition_percent < CONDITION_MIN) is checked in
+'      _duty_state() before activity is even looked at, so it can overlay
+'      CHARGING, WORKING and RETURNING too, not only IDLE as this diagram
+'      previously drew. All four are now shown.
+'   4. RETURNING --> CHARGING only actually survives to the next
+'      telemetry sample for the idle-timeout and operator-requested
+'      return paths. A return triggered by a FAILED delivery does publish
+'      "charging" first, but task_manager._serve_queue() immediately
+'      republishes "idle" straight after execute_order() returns,
+'      overwriting it - see the note beside CHARGING below.
+'
+' Source: robofetch_core/robot_state_node.py (_duty_state),
+'         robofetch_core/task_manager.py (_serve_queue, execute_order,
+'         execute_return, return_to_station, _on_estop, _halt)
 ' =====================================================================
 @startuml
 skinparam backgroundColor White
@@ -13,33 +48,87 @@ skinparam state {
   ArrowColor #34495E
 }
 
-
 [*] --> CHARGING : boots docked at the station
 
-CHARGING --> IDLE : battery at ready level
-IDLE --> WORKING : an accepted order is dequeued
-IDLE --> RETURNING : idle timeout expires
-WORKING --> RETURNING : order finished (delivered or failed)
-WORKING --> COOLDOWN : temperature reaches the limit
-COOLDOWN --> RETURNING : temperature falls below resume level
-RETURNING --> CHARGING : station reached
-RETURNING --> FAULT : station unreachable
-CHARGING --> IDLE : recharged
-IDLE --> FAULT : condition below the maintenance floor
-FAULT --> [*]
+CHARGING --> WORKING : an order is dequeued (still docked - no IDLE step)
+IDLE --> WORKING : an order is dequeued
+
+WORKING --> IDLE : order finished (delivered, or failed with\nno forced return)
+WORKING --> RETURNING : some failures return home immediately\n(pick point/bay unreachable, grab failed x3)
+
+IDLE --> RETURNING : idle timeout expires, or the operator\nrequests a return
+RETURNING --> CHARGING : station reached\n(idle-timeout or operator-requested return only -\nsee note)
+RETURNING --> IDLE : station unreachable - the robot stays\nwhere it stopped, not FAULT
+
+CHARGING --> FAULT : condition drops below the\nmaintenance floor
+WORKING --> FAULT : condition drops below the\nmaintenance floor
+IDLE --> FAULT : condition drops below the\nmaintenance floor
+RETURNING --> FAULT : condition drops below the\nmaintenance floor
+FAULT --> [*] : unrecoverable within a session\n(cleared only by the next launch's reset)
+
+CHARGING --> COOLDOWN : measured temperature\ncrosses the overheating limit
+WORKING --> COOLDOWN : measured temperature\ncrosses the overheating limit
+IDLE --> COOLDOWN : measured temperature\ncrosses the overheating limit
+RETURNING --> COOLDOWN : measured temperature\ncrosses the overheating limit
+COOLDOWN --> WORKING : temperature falls back down\n(whatever the underlying activity was)
+COOLDOWN --> IDLE : temperature falls back down
+COOLDOWN --> CHARGING : temperature falls back down
+COOLDOWN --> RETURNING : temperature falls back down
+
+CHARGING --> STOPPED : emergency stop
+IDLE --> STOPPED : emergency stop
+WORKING --> STOPPED : emergency stop
+RETURNING --> STOPPED : emergency stop
+COOLDOWN --> STOPPED : emergency stop
+FAULT --> STOPPED : emergency stop
+STOPPED --> IDLE : the worker thread has unwound\n(no confirmation needed - it just resumes)
 
 note right of COOLDOWN
-  Entered from the measured
-  temperature, not from a command.
-  Admission control reads this state
-  and refuses new work while it holds.
+  Not a queued event - recomputed every
+  tick from live temperature. Admission
+  control refuses new work while this
+  holds, but it does NOT pause an order
+  already running underneath it.
 end note
 
 note left of RETURNING
   Reached automatically after the idle
-  timeout, so the robot parks and
-  recharges instead of stopping wherever
-  the last delivery left it.
+  timeout (only while away from the
+  station), on operator request, or as
+  part of certain delivery failures -
+  never by the robot simply sitting idle
+  at the station.
+end note
+
+note right of CHARGING
+  RETURNING really does report CHARGING
+  the moment the station is reached - but
+  when the return was triggered by a
+  FAILED delivery, task_manager._serve_queue()
+  immediately republishes "idle" right
+  after execute_order() returns
+  (task_manager.py, the line straight
+  after the call), overwriting it before
+  the next 1 Hz telemetry sample can catch
+  it. Only the idle-timeout and the
+  operator-requested return leave the
+  robot observably CHARGING; a
+  delivery-failure return is observed as
+  IDLE instead.
+end note
+
+note bottom of STOPPED
+  Outranks every other state in
+  _duty_state() - checked first, before
+  even COOLDOWN/FAULT. Nothing latches:
+  it is meant to clear the moment the
+  worker thread notices and republishes
+  IDLE, though a known race condition
+  (halt()'s own trailing "stopped"
+  publish arriving after that IDLE
+  message) can leave it stuck reporting
+  STOPPED well after the robot has
+  actually recovered.
 end note
 
 @enduml

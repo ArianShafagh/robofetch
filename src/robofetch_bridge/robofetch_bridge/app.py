@@ -379,7 +379,7 @@ NO_CACHE = {"Cache-Control": "no-store, must-revalidate", "Pragma": "no-cache"}
 # 2 s is fast enough that an order visibly moves through navigating -> grabbing -> delivering
 # while you watch. It is affordable because every page is a handful of SQLite reads with no
 # JavaScript and no polling API behind it.
-PAGE_REFRESH_SECONDS = 2
+PAGE_REFRESH_SECONDS = 1
 
 
 def _css_version():

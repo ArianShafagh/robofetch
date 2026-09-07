@@ -22,9 +22,9 @@ import argparse
 import csv
 import random
 
-from robofetch_core.robot_model import (CONDITION_MIN, RESERVE_PERCENT, RobotCondition, T_MAX,
-                                        battery_percent_for, duration_s, energy_wh,
-                                        simulate_route)
+from robofetch_core.robot_model import (CONDITION_MIN, FIXED_OVERHEAD_S, RESERVE_PERCENT,
+                                        RobotCondition, T_MAX, battery_percent_for, duration_s,
+                                        energy_wh, simulate_route)
 
 # Route lengths that actually occur in this warehouse. The shortest job is a pick point near
 # the station; the longest is the far shelf to the opposite corner, about 12 m. Sampling
@@ -56,7 +56,7 @@ def simulate_one(run_id, rng):
     order_energy = energy_wh(distance, payload, start.temperature_c, start.condition_percent)
     return_energy = energy_wh(return_distance, 0.0, start.temperature_c,
                               start.condition_percent)
-    predicted, peak = simulate_route(start, distance, payload)
+    predicted, peak = simulate_route(start, [(distance, payload)], settle_s=FIXED_OVERHEAD_S)
 
     battery_after = start.battery_percent - battery_percent_for(order_energy + return_energy)
 

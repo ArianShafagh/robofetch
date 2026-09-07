@@ -1,0 +1,68 @@
+' =====================================================================
+' RoboFetch - C2, order admission (SIMPLIFIED for understanding)
+'
+' Drops the reservation-ledger internals and the exact wording of each
+' refusal to show just the CONCEPT: four hard physical/business checks,
+' in cheapest-and-most-certain-first order, then one learned opinion
+' layered on top that can only ever refuse, never approve, what the
+' hard checks already allowed. See 05-activity-admission.puml for the
+' exact gates, in the exact order the code runs them.
+' =====================================================================
+@startuml
+skinparam backgroundColor White
+skinparam shadowing false
+skinparam activity {
+  BackgroundColor #FBFCFE
+  BorderColor #34495E
+  ArrowColor #34495E
+  DiamondBackgroundColor #FDF6E3
+  DiamondBorderColor #34495E
+}
+
+start
+:Someone orders a product;
+
+if (Is it in stock?) then (no)
+  :REFUSE;
+  stop
+endif
+
+if (Would the robot still have\nenough battery to get home?) then (no)
+  :REFUSE;
+  stop
+endif
+
+if (Would the motors overheat?) then (no)
+  :REFUSE;
+  stop
+endif
+
+if (Is the robot healthy enough\nto work at all?) then (no)
+  :REFUSE;
+  stop
+endif
+
+note right
+  4 hard, certain checks -
+  no judgment needed, just
+  physics and facts.
+end note
+
+if (What does the learned\nmodel think?) then (risky)
+  :REFUSE;
+  stop
+else (looks fine)
+endif
+
+note right
+  1 learned opinion, added
+  LAST - it can only refuse a
+  job the 4 checks already
+  allowed, never approve one
+  they rejected.
+end note
+
+:ACCEPT the order;
+stop
+
+@enduml

@@ -301,6 +301,21 @@ physics. Its purpose is to demonstrate an ML-in-the-loop decision workflow. The 
 without it: if the AI service is unreachable, admission falls back to the deterministic energy
 formula and records the decision as made by policy alone.
 
+### Proving the AI fallback (NFR2)
+
+The web API (`:8000`) and the AI service (`:8001`) are two independent processes on purpose —
+the app has to keep working when the AI is down. To see that live, kill only the AI service:
+
+```bash
+./scripts/toggle_ai.sh          # kills it, waits for you to test, then restarts it
+./scripts/toggle_ai.sh down     # just kill it
+./scripts/toggle_ai.sh up       # just (re)start it
+```
+
+While it's down, `curl -s http://localhost:8000/health` reports `"ai_service": {"reachable":
+false}`, and orders still get admitted or refused — check the preview or `/api/orders`, where
+**decided by** reads `policy` instead of `model`.
+
 ---
 
 ## Testing

@@ -72,6 +72,18 @@ def test_classifier_cannot_rescue_an_order_the_policy_rejected():
     assert decided_by == "policy"        # the model was never even consulted
 
 
+def test_empty_leg_is_not_charged_at_the_loaded_rate():
+    """A route whose empty leg (robot -> pick point) is most of the distance must cost less
+    than treating the whole route as loaded the entire way would have produced."""
+    from robofetch_core.robot_model import energy_wh
+
+    far_pick_product = product(weight=4.5, pick=(8.0, -2.2))     # long empty leg, short loaded leg
+    _, _, _, cost = admission.decide(far_pick_product, DELIVERY, STATION, state())
+
+    buggy_energy = energy_wh(cost["distance_m"], far_pick_product["weight_kg"], 22.0, 100.0)
+    assert cost["energy_wh"] < buggy_energy
+
+
 def test_system_still_decides_when_the_ai_is_unreachable():
     """NFR2: losing the AI must degrade to the deterministic rule, not block."""
     decision, _, decided_by, _ = admission.decide(

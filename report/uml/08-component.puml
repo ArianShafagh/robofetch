@@ -1,27 +1,40 @@
 ' =====================================================================
-' RoboFetch - Component diagram (UML 2)
+' RoboFetch - Component diagram (UML 2), detailed / topic-accurate
 '
-'   port                interaction point on a component's boundary
-'   ─(0─ IFoo           assembly connector: the required interface
-'                       (socket) of one component meets the provided
-'                       interface (ball) of another
-'   port ── [part]      delegation connector, inside the Web Tier
-'   <<use>>             a plain dependency, not an interface
+' Notation
+'   [port]              interaction point on a component's boundary
+'   portin / portout     direction the port carries data across that
+'                        boundary (in = consumed by the component,
+'                        out = produced by the component)
+'   A -(0- B : IFoo      assembly connector: A's socket (required) meets
+'                        B's ball (provided) over interface IFoo
+'   port -- [part]        delegation: a boundary port forwarded to an
+'                        internal part (used only where a component is
+'                        opened, i.e. the Web Tier)
+'   A ..> B : <<use>>     plain dependency - shared code, not messaging
 '
-' Only the Web Tier is opened, to show delegation once. Every other
-' component is closed on purpose: what depends on it binds to its
-' interfaces, not to its insides.
+' Every interface is named after the real ROS 2 topic, action or
+' service it stands for (see the label under each name), so this
+' diagram can be read directly against ros_link.py / task_manager.py /
+' gripper_node.py / robot_state_node.py.
+'
+' Only the Web Tier is opened, to show one delegation clearly. Every
+' other component is closed on purpose: what depends on it binds to
+' its ports, not to its insides.
 ' =====================================================================
 @startuml
+title RoboFetch v2 - Component Diagram (ports and interfaces)
+
 skinparam backgroundColor White
 skinparam shadowing false
 skinparam componentStyle uml2
-skinparam nodesep 30
-skinparam ranksep 42
+skinparam nodesep 34
+skinparam ranksep 46
 skinparam component {
   BackgroundColor #FBFCFE
   BorderColor #34495E
   ArrowColor #34495E
+  FontSize 13
 }
 skinparam interface {
   BackgroundColor #FFFFFF
@@ -31,55 +44,158 @@ skinparam database {
   BackgroundColor #F4F6F8
   BorderColor #7F8C8D
 }
+skinparam note {
+  BackgroundColor #FFFDF2
+  BorderColor #B8A94E
+}
+skinparam ArrowFontSize 11
 
 actor "Controller /\nadministrator" as USER
 
-component "Web Tier   <<robofetch_bridge>>" as WEB {
-  portin  "http" as p_http
-  portout "ai"   as p_ai
-  portout "ros"  as p_ros
+' --------------------------------------------------------------- Web Tier
+component "Web Tier\n<<robofetch_bridge>>" as WEB {
+  portin  "http"      as p_http
+  portout "render"    as p_render
+  portout "ai"        as p_ai
+  portout "orders"    as p_orders
+  portout "estop"     as p_stopOut
+  portin  "status"    as p_statusIn
+  portin  "telemetry" as p_telIn
+  portin  "pose"      as p_poseWeb
 
-  [app.py\nroutes, sessions] as APP
-  [admission.py\ncost + 5 gates] as ADM
-  [db.py\nrepository] as DBR
-  [predictor.py] as PRED
-  [ros_link.py] as LINK
+  [app.py\nroutes · sessions · admin] as APP
+  [admission.py\n5 gates + reservation ledger] as ADM
+  [db.py\nSQLite repository] as DBR
+  [predictor.py\nfail-soft AI client (NFR2)] as PRED
+  [ros_link.py\nRosLink bridge node] as LINK
 
-  p_http -- APP
+  p_http   -- APP
+  p_render -- APP
   APP --> DBR
   APP --> ADM
   APP --> LINK
   ADM --> PRED
-  PRED -- p_ai
-  LINK -- p_ros
+  PRED     -- p_ai
+  LINK     -- p_orders
+  LINK     -- p_stopOut
+  LINK     -- p_statusIn
+  LINK     -- p_telIn
+  LINK     -- p_poseWeb
 }
 
-database "robofetch.db" as SQLITE
-component "AI Service\n<<robofetch_ai>>" as AI
-component "Task Manager\n<<robofetch_core>>" as TM {
-  portin  "orders"  as p_orders
-  portout "actuate" as p_act
+component "Web UI Assets\n<<robofetch_web>>\nJinja2 templates + CSS" as WEBUI
+component "robot_model.py\n<<shared physics>>\n(no ROS deps)" as RM
+database  "robofetch.db\n<<SQLite>>" as SQLITE
+
+component "AI Service\n<<robofetch_ai>>" as AI {
+  portin "predict" as p_predict
 }
-component "Condition Monitor\n<<robofetch_core>>" as RSN
-component "Gripper Node\n<<robofetch_core>>" as GN
-component "Nav2\n<<third party>>" as NAV
-component "Gazebo Harmonic\n<<third party>>" as GZ
-component "robot_model.py\n<<shared physics>>" as RM
+note bottom of AI
+  loads model.joblib (scikit-learn)
+  once at start-up; on any failure
+  stays up and answers
+  model_loaded = false, so the
+  caller can fall back (NFR2).
+end note
 
-' ------------------------------------------------------ assembly connectors
-USER -(0- p_http : IWebUI
-p_ai -(0- AI : IPredict
-p_ros -(0-  p_orders : IOrderQueue
-p_ros -(0-  p_orders : IEstop
-TM   -(0- p_ros : IOrderStatus
-RSN  -(0- p_ros : ITelemetry
-p_act -(0- GN  : IGrab
-p_act -(0- NAV : INavigate
-GN  -(0- GZ : ISimulation
-NAV -(0- GZ : ISimulation
+' --------------------------------------------------------------- Task Manager
+component "Task Manager\n<<robofetch_core :: task_manager>>" as TM {
+  portin  "new_order"   as p_new
+  portin  "estop"       as p_stopIn
+  portin  "pose"        as p_poseTM
+  portin  "model_pose"  as p_mposeTM
+  portout "status"      as p_statusOut
+  portout "activity"    as p_activityOut
+  portout "grab"        as p_grabOut
+  portout "navigate"    as p_navOut
+  portout "init_pose"   as p_initOut
+}
+note bottom of TM
+  worker thread:
+  navigate -> grab (x3) -> navigate
+  -> release -> verify (C3)
+  FIFO queue; idle 120 s -> return
+end note
 
+component "Condition Monitor\n<<robofetch_core :: robot_state_node>>" as RSN {
+  portin  "odom"      as p_odomIn
+  portin  "activity"  as p_activityIn
+  portout "telemetry" as p_telOut
+}
+
+component "Gripper Node\n<<robofetch_core :: gripper_node>>" as GN {
+  portin  "grab"       as p_grabIn
+  portin  "pose"       as p_poseGN
+  portin  "model_pose" as p_mposeGN
+  portout "sim"        as p_simOut
+}
+note bottom of GN
+  verifies against the
+  DetachableJoint's OWN state,
+  never against commands alone
+end note
+
+component "Nav2 + AMCL\n<<third-party>>" as NAV {
+  portin  "navigate"    as p_navIn
+  portin  "init_pose"   as p_initIn
+  portin  "odom"        as p_odomReq
+  portin  "scan"        as p_scanReq
+  portout "pose"        as p_poseOut
+  portout "cmd_vel"     as p_cmdOut
+}
+
+component "Gazebo Harmonic\n<<third-party>>\n(+ ros_gz bridge)" as GZ {
+  portout "odom"       as p_odomOut
+  portout "scan"       as p_scanOut
+  portin  "cmd_vel"    as p_cmdIn
+  portin  "sim"        as p_simIn
+  portout "model_pose" as p_mposeOut
+}
+
+' ============================================================ interfaces
+' Named after the real topic / action / service each one carries.
+
+USER      -(0- p_http     : IWebUI\n(HTTP + HTML, session cookie)
+p_render  -(0- WEBUI      : ISSR\n(templates, static CSS)
+p_ai      -(0- p_predict  : IPredict\n(POST /predict)
+
+p_orders  -(0- p_new      : IOrderQueue\n(/orders/new)
+p_stopOut -(0- p_stopIn   : IEstop\n(/robot/estop)
+p_statusOut -(0- p_statusIn : IOrderStatus\n(/orders/status)
+p_activityOut -(0- p_activityIn : IActivity\n(/robot/activity)
+p_telOut  -(0- p_telIn    : ITelemetry\n(/robot/telemetry)
+
+p_navOut  -(0- p_navIn    : INavigate\n(NavigateToPose action)
+p_initOut -(0- p_initIn   : IInitialPose\n(/initialpose)
+p_poseOut -(0- p_poseTM   : IPose\n(/amcl_pose)
+p_poseOut -(0- p_poseGN   : IPose\n(/amcl_pose)
+p_poseOut -(0- p_poseWeb  : IPose\n(/amcl_pose)
+
+p_grabOut -(0- p_grabIn   : IGrab\n(Grab.srv: ~/grab, ~/release)
+note on link
+  <<robofetch_interfaces>>
+end note
+
+p_odomOut -(0- p_odomReq  : IOdometry\n(/odom)
+p_odomOut -(0- p_odomIn   : IOdometry\n(/odom)
+p_scanOut -(0- p_scanReq  : ILaserScan\n(/scan)
+p_cmdOut  -(0- p_cmdIn    : ICmdVel\n(/cmd_vel)
+p_simOut  -(0- p_simIn    : ISimulation\n(attach/detach + set_pose)
+p_mposeOut -(0- p_mposeGN : IModelPose\n(/model/<name>/pose)
+p_mposeOut -(0- p_mposeTM : IModelPose\n(/model/<name>/pose)
+
+' ============================================================ plain dependencies
 DBR --> SQLITE
 ADM ..> RM : <<use>>
 RSN ..> RM : <<use>>
+
+legend right
+  |= symbol |= meaning |
+  | port square | boundary interaction point |
+  | ball○—(socket | assembly: provided meets required |
+  | plain arrow --> | intra-process call (same address space) |
+  | dashed ..> <<use>> | shares code, no message passes |
+  | database cylinder | persistent store (SQLite file) |
+endlegend
 
 @enduml

@@ -9,7 +9,7 @@ A deliberately small, representative set - see the testing chapter of the report
 """
 import pytest
 
-from robofetch_core.robot_model import RobotCondition, energy_wh
+from robofetch_core.robot_model import FIXED_OVERHEAD_S, RobotCondition, energy_wh, simulate_route
 
 
 # --------------------------------------------------------------------- energy
@@ -19,6 +19,34 @@ def test_heavier_payload_costs_more():
     light = energy_wh(10.0, 0.3)
     heavy = energy_wh(10.0, 4.5)
     assert heavy > light
+
+
+# ---------------------------------------------------------------- route legs
+
+
+def test_splitting_legs_costs_less_than_treating_the_whole_route_as_loaded():
+    """The bug this pins: charging the full payload's rate across an empty leg overheats and
+    overcosts every order whose empty leg is a large fraction of the total distance."""
+    empty_m, loaded_m, payload = 10.0, 1.0, 4.5
+
+    _, split_peak = simulate_route(RobotCondition(), [(empty_m, 0.0), (loaded_m, payload)])
+    _, combined_peak = simulate_route(RobotCondition(), [(empty_m + loaded_m, payload)])
+
+    assert split_peak < combined_peak
+
+
+def test_settle_time_is_applied_once_per_order_not_once_per_leg():
+    """Splitting one route into two legs must not double the grab/release settle time."""
+    two_leg = simulate_route(RobotCondition(), [(1.0, 0.0), (1.0, 4.5)],
+                             settle_s=FIXED_OVERHEAD_S)
+    one_leg = simulate_route(RobotCondition(), [(2.0, 4.5)], settle_s=FIXED_OVERHEAD_S)
+
+    _, two_leg_peak = two_leg
+    _, one_leg_peak = one_leg
+    # Same total distance and the same single settle phase either way, so the peaks should be
+    # close - not systematically higher for the split route, which is what a doubled settle
+    # phase would cause.
+    assert two_leg_peak <= one_leg_peak + 1.0
 
 
 # -------------------------------------------------------------------- dynamics

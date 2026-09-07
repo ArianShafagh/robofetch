@@ -23,9 +23,10 @@ third-party ML call, so it is worth being precise about why:
 Pure logic: no ROS, no HTTP, no database handles. Everything it needs is passed in, which is
 what makes the whole decision path unit-testable without a simulator.
 """
-from robofetch_core.robot_model import (CONDITION_MIN, EFFECTIVE_SPEED, RESERVE_PERCENT,
-                                        RobotCondition, T_MAX, battery_percent_for, duration_s,
-                                        energy_wh, route_legs, simulate_route)
+from robofetch_core.robot_model import (CONDITION_MIN, EFFECTIVE_SPEED, FIXED_OVERHEAD_S,
+                                        RESERVE_PERCENT, RobotCondition, T_MAX,
+                                        battery_percent_for, duration_s, energy_wh, route_legs,
+                                        simulate_route)
 
 ACCEPTED = "accepted"
 REFUSED = "refused"
@@ -103,13 +104,22 @@ def estimate(product, delivery, station, robot_state, robot_xy=None):
                       (delivery["x"], delivery["y"]),
                       (station["x"], station["y"]))
 
-    order_energy = energy_wh(legs["order_m"], payload,
-                             condition.temperature_c, condition.condition_percent)
-    # The return leg is driven empty, so it costs less per metre than the loaded legs.
+    # The robot drives the FIRST leg empty-handed - it has not reached the shelf yet - and
+    # only the second leg loaded. Charging the whole order distance at the loaded rate (as if
+    # the payload were on board from the start position) overcharges every order, worst on
+    # routes where the empty approach is most of the distance.
+    empty_leg_energy = energy_wh(legs["to_pick_m"], 0.0,
+                                 condition.temperature_c, condition.condition_percent)
+    loaded_leg_energy = energy_wh(legs["to_delivery_m"], payload,
+                                  condition.temperature_c, condition.condition_percent)
+    order_energy = empty_leg_energy + loaded_leg_energy
+    # The return leg is driven empty too, so it costs less per metre than the loaded leg.
     return_energy = energy_wh(legs["return_m"], 0.0,
                               condition.temperature_c, condition.condition_percent)
 
-    predicted, peak_temperature = simulate_route(condition, legs["order_m"], payload)
+    predicted, peak_temperature = simulate_route(
+        condition, [(legs["to_pick_m"], 0.0), (legs["to_delivery_m"], payload)],
+        settle_s=FIXED_OVERHEAD_S)
 
     return {
         "distance_m": round(legs["order_m"], 2),
@@ -144,7 +154,9 @@ def estimate_return(station, robot_state, robot_xy=None, committed=None):
     distance = ((start[0] - station["x"]) ** 2 + (start[1] - station["y"]) ** 2) ** 0.5
 
     energy = energy_wh(distance, 0.0, condition.temperature_c, condition.condition_percent)
-    predicted, peak = simulate_route(condition, distance, 0.0)
+    # No settle_s: matches "No FIXED_OVERHEAD_S" below - there is no parcel to pick up or put
+    # down on a return trip, so there is nothing to settle.
+    predicted, peak = simulate_route(condition, [(distance, 0.0)])
 
     return {
         "distance_m": round(distance, 2),
